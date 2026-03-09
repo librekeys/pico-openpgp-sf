@@ -67,16 +67,35 @@ extern int pin_reset_retries(const file_t *pin, bool force);
 
 extern void select_file(file_t *pe);
 extern int parse_do(uint16_t *fids, int mode);
-extern int load_dek();
+extern int load_dek(void);
 extern int check_pin(const file_t *pin, const uint8_t *data, size_t len);
 extern mbedtls_ecp_group_id get_ec_group_id_from_attr(const uint8_t *algo, size_t algo_len);
-extern int reset_sig_count();
+extern int reset_sig_count(void);
 extern uint16_t algo_dec, algo_aut, pk_dec, pk_aut;
 extern bool wait_button_pressed_fid(uint16_t fid);
-extern void scan_files_openpgp();
+extern void scan_files_openpgp(void);
 extern int load_aes_key(uint8_t *aes_key, file_t *fkey);
-extern int inc_sig_count();
+extern int inc_sig_count(void);
 extern int dek_encrypt(uint8_t *data, size_t len);
 extern int dek_decrypt(uint8_t *data, size_t len);
+
+int cmd_select(void);
+int cmd_get_data(void);
+int cmd_get_next_data(void);
+int cmd_put_data(void);
+int cmd_verify(void);
+int cmd_select_data(void);
+int cmd_version_openpgp(void);
+int cmd_import_data(void);
+int cmd_change_pin(void);
+int cmd_mse(void);
+int cmd_internal_aut(void);
+int cmd_challenge(void);
+int cmd_activate_file(void);
+int cmd_terminate_df(void);
+int cmd_pso(void);
+int cmd_keypair_gen(void);
+int cmd_reset_retry(void);
+int cmd_get_bulk_data(void);
 
 #endif

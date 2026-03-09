@@ -61,7 +61,7 @@ char atr_openpgp[] = {
     0x60, 0x00, 0x90, 0x00, 0x1c
 };
 
-int openpgp_process_apdu();
+int openpgp_process_apdu(void);
 
 extern uint32_t board_button_read(void);
 
@@ -75,6 +75,8 @@ bool wait_button_pressed_fid(uint16_t fid) {
             queue_remove_blocking(&usb_to_card_q, &val);
         }while (val != EV_BUTTON_PRESSED && val != EV_BUTTON_TIMEOUT);
     }
+#else
+    (void) fid;
 #endif
     return val == EV_BUTTON_TIMEOUT;
 }
@@ -97,7 +99,7 @@ void select_file(file_t *pe) {
     }
 }
 
-void scan_files_openpgp() {
+void scan_files_openpgp(void) {
     scan_flash();
     file_t *ef;
     if ((ef = search_by_fid(EF_FULL_AID, NULL, SPECIFY_ANY))) {
@@ -112,10 +114,10 @@ void scan_files_openpgp() {
             const uint8_t def3[8] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38 };
 
             uint8_t def[IV_SIZE + 32 + 32 + 32];
-            const uint8_t *dek = random_bytes_get(IV_SIZE + 32);
-            memcpy(def, dek, IV_SIZE + 32);
-            memcpy(def + IV_SIZE + 32, dek + IV_SIZE, 32);
-            memcpy(def + IV_SIZE + 32 + 32, dek + IV_SIZE, 32);
+            const uint8_t *random_dek = random_bytes_get(IV_SIZE + 32);
+            memcpy(def, random_dek, IV_SIZE + 32);
+            memcpy(def + IV_SIZE + 32, random_dek + IV_SIZE, 32);
+            memcpy(def + IV_SIZE + 32 + 32, random_dek + IV_SIZE, 32);
             hash_multi(def1, sizeof(def1), session_pw1);
             aes_encrypt_cfb_256(session_pw1, def, def + IV_SIZE, 32);
             memset(session_pw1, 0, sizeof(session_pw1));
@@ -219,13 +221,13 @@ void scan_files_openpgp() {
     low_flash_available();
 }
 
-void release_dek() {
+static void release_dek(void) {
     memset(dek, 0, sizeof(dek));
 }
 
 extern bool has_pwpiv;
 extern uint8_t session_pwpiv[32];
-int load_dek() {
+int load_dek(void) {
     if (!has_pw1 && !has_pw2 && !has_pw3 && !has_pwpiv) {
         return PICOKEY_NO_LOGIN;
     }
@@ -280,7 +282,7 @@ int dek_decrypt(uint8_t *data, size_t len) {
     return r;
 }
 
-void init_openpgp() {
+static void init_openpgp(void) {
     isUserAuthenticated = false;
     has_pw1 = has_pw2 = has_pw3 = false;
     algo_dec = EF_ALGO_PRIV2;
@@ -291,7 +293,7 @@ void init_openpgp() {
     //cmd_select();
 }
 
-int openpgp_unload() {
+static int openpgp_unload(void) {
     isUserAuthenticated = false;
     has_pw1 = has_pw2 = has_pw3 = false;
     algo_dec = EF_ALGO_PRIV2;
@@ -302,7 +304,7 @@ int openpgp_unload() {
 }
 
 extern char __StackLimit;
-int heapLeft() {
+static int heapLeft(void) {
 #if !defined(ENABLE_EMULATION) && !defined(ESP_PLATFORM)
     char *p = malloc(256);   // try to avoid undue fragmentation
     int left = &__StackLimit - p;
@@ -313,7 +315,7 @@ int heapLeft() {
     return left;
 }
 
-int openpgp_select_aid(app_t *a, uint8_t force) {
+static int openpgp_select_aid(app_t *a, uint8_t force) {
     (void) force;
     a->process_apdu = openpgp_process_apdu;
     a->unload = openpgp_unload;
@@ -361,7 +363,7 @@ int pin_reset_retries(const file_t *pin, bool force) {
     return r;
 }
 
-int pin_wrong_retry(const file_t *pin) {
+static int pin_wrong_retry(const file_t *pin) {
     if (!pin) {
         return PICOKEY_ERR_NULL_PARAM;
     }
@@ -433,7 +435,7 @@ int check_pin(const file_t *pin, const uint8_t *data, size_t len) {
     return SW_OK();
 }
 
-int inc_sig_count() {
+int inc_sig_count(void) {
     file_t *pw_status;
     if (!(pw_status = search_by_fid(EF_PW_PRIV, NULL, SPECIFY_EF)) || !pw_status->data) {
         return SW_REFERENCE_NOT_FOUND();
@@ -457,7 +459,7 @@ int inc_sig_count() {
     return PICOKEY_OK;
 }
 
-int reset_sig_count() {
+int reset_sig_count(void) {
     file_t *ef = search_by_fid(EF_SIG_COUNT, NULL, SPECIFY_ANY);
     if (!ef || !ef->data) {
         return PICOKEY_ERR_FILE_NOT_FOUND;
@@ -684,7 +686,8 @@ int rsa_sign(mbedtls_rsa_context *ctx,
              size_t *out_len) {
     uint8_t *d = (uint8_t *) data, *end = d + data_len, *hsh = NULL;
     size_t seq_len = 0, hash_len = 0;
-    int key_size = ctx->len, r = 0;
+    size_t key_size = ctx->len;
+    int r = 0;
     mbedtls_md_type_t md = MBEDTLS_MD_NONE;
     if (mbedtls_asn1_get_tag(&d, end, &seq_len,
                              MBEDTLS_ASN1_CONSTRUCTED | MBEDTLS_ASN1_SEQUENCE) == 0) {
@@ -776,25 +779,6 @@ int ecdsa_sign(mbedtls_ecp_keypair *ctx,
     return r;
 }
 
-extern int cmd_select();
-extern int cmd_get_data();
-extern int cmd_get_next_data();
-extern int cmd_put_data();
-extern int cmd_verify();
-extern int cmd_select_data();
-extern int cmd_version_openpgp();
-extern int cmd_import_data();
-extern int cmd_change_pin();
-extern int cmd_mse();
-extern int cmd_internal_aut();
-extern int cmd_challenge();
-extern int cmd_activate_file();
-extern int cmd_terminate_df();
-extern int cmd_pso();
-extern int cmd_keypair_gen();
-extern int cmd_reset_retry();
-extern int cmd_get_bulk_data();
-
 #define INS_VERIFY          0x20
 #define INS_MSE             0x22
 #define INS_CHANGE_PIN      0x24
@@ -836,7 +820,7 @@ static const cmd_t cmds[] = {
     { 0x00, NULL }
 };
 
-int openpgp_process_apdu() {
+int openpgp_process_apdu(void) {
     sm_unwrap();
     for (const cmd_t *cmd = cmds; cmd->ins != 0x00; cmd++) {
         if (cmd->ins == INS(apdu)) {

@@ -18,7 +18,7 @@
 #include "openpgp.h"
 #include "otp.h"
 
-int cmd_change_pin() {
+int cmd_change_pin(void) {
     if (P1(apdu) != 0x0) {
         return SW_WRONG_P1P2();
     }

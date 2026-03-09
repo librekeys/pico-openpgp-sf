@@ -27,7 +27,7 @@
 #include "mbedtls/ecdh.h"
 #include "mbedtls/asn1.h"
 
-int cmd_pso() {
+int cmd_pso(void) {
     uint16_t algo_fid = 0x0, pk_fid = 0x0;
     bool is_aes = false;
     if (P1(apdu) == 0x9E && P2(apdu) == 0x9A) {
@@ -70,7 +70,7 @@ int cmd_pso() {
         return SW_SECURE_MESSAGE_EXEC_ERROR();
     }
     int r = PICOKEY_OK;
-    int key_size = file_get_size(ef);
+    size_t key_size = file_get_size(ef);
     if (is_aes) {
         uint8_t aes_key[32];
         r = load_aes_key(aes_key, ef);

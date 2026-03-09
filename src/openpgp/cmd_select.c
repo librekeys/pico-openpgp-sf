@@ -17,7 +17,7 @@
 
 #include "openpgp.h"
 
-int cmd_select() {
+int cmd_select(void) {
     uint8_t p1 = P1(apdu);
     uint8_t p2 = P2(apdu);
     file_t *pe = NULL;

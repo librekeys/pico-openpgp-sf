@@ -18,7 +18,7 @@
 #include "openpgp.h"
 #include "do.h"
 
-int cmd_internal_aut() {
+int cmd_internal_aut(void) {
     if (P1(apdu) != 0x00 || P2(apdu) != 0x00) {
         return SW_WRONG_P1P2();
     }

@@ -17,7 +17,7 @@
 
 #include "openpgp.h"
 
-int cmd_terminate_df() {
+int cmd_terminate_df(void) {
     if (P1(apdu) != 0x0 || P2(apdu) != 0x0) {
         return SW_INCORRECT_P1P2();
     }

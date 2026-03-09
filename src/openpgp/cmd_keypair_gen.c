@@ -19,7 +19,7 @@
 #include "do.h"
 #include "random.h"
 
-int cmd_keypair_gen() {
+int cmd_keypair_gen(void) {
     if (P2(apdu) != 0x0) {
         return SW_INCORRECT_P1P2();
     }

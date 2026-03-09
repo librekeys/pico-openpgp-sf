@@ -25,7 +25,7 @@
 #include "random.h"
 #include "do.h"
 
-uint16_t tag_len(uint8_t **data) {
+static uint16_t tag_len(uint8_t **data) {
     size_t len = *(*data)++;
     if (len == 0x82) {
         len = *(*data)++ << 8;
@@ -37,7 +37,7 @@ uint16_t tag_len(uint8_t **data) {
     return len;
 }
 
-int cmd_import_data() {
+int cmd_import_data(void) {
     file_t *ef = NULL;
     uint16_t fid = 0x0;
     if (P1(apdu) != 0x3F || P2(apdu) != 0xFF) {

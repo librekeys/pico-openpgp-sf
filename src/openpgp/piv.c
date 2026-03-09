@@ -76,9 +76,11 @@ uint8_t yk_aid[] = {
 bool has_pwpiv = false;
 uint8_t session_pwpiv[32];
 
-int piv_process_apdu();
+int piv_process_apdu(void);
+void init_piv(void);
+int piv_parse_discovery(const file_t *ef);
 
-static int get_serial() {
+static int get_serial(void) {
     uint32_t serial = (pico_serial.id[0] & 0x7F) << 24 | pico_serial.id[1] << 16 | pico_serial.id[2] << 8 | pico_serial.id[3];
     return serial;
 }
@@ -116,8 +118,8 @@ static int x509_create_cert(void *pk_ctx, uint8_t algo, uint8_t slot, bool attes
         mbedtls_x509write_crt_set_issuer_key(&ctx, &ikey);
         uint8_t ver[] = {PIV_VERSION_MAJOR, PIV_VERSION_MINOR, 0};
         mbedtls_x509write_crt_set_extension(&ctx, "\x2B\x06\x01\x04\x01\x82\xC4\x0A\x03\x03", 10, 0, ver, sizeof(ver));
-        uint32_t serial = get_serial();
-        mbedtls_x509write_crt_set_extension(&ctx, "\x2B\x06\x01\x04\x01\x82\xC4\x0A\x03\x07", 10, 0, (const uint8_t *)&serial, sizeof(serial));
+        uint32_t device_serial = get_serial();
+        mbedtls_x509write_crt_set_extension(&ctx, "\x2B\x06\x01\x04\x01\x82\xC4\x0A\x03\x07", 10, 0, (const uint8_t *)&device_serial, sizeof(device_serial));
         int meta_len = 0;
         uint8_t *meta;
         if ((meta_len = meta_find(slot, &meta)) >= 0) {
@@ -163,7 +165,7 @@ static int x509_create_cert(void *pk_ctx, uint8_t algo, uint8_t slot, bool attes
     return ret;
 }
 
-static void scan_files_piv() {
+static void scan_files_piv(void) {
     scan_flash();
     file_t *ef = search_by_fid(EF_PIV_KEY_CARDMGM, NULL, SPECIFY_EF);
     if ((ef = search_by_fid(EF_PW_PRIV, NULL, SPECIFY_ANY))) {
@@ -199,23 +201,23 @@ static void scan_files_piv() {
         if (file_get_size(ef) == 0 || file_get_size(ef) == IV_SIZE+32*3) {
             printf("DEK is empty or older\r\n");
             const uint8_t defpin[6] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36 };
-            const uint8_t *dek = random_bytes_get(IV_SIZE + 32);
+            const uint8_t *random_dek = random_bytes_get(IV_SIZE + 32);
             uint8_t def[IV_SIZE + 32 + 32 + 32 + 32];
             if (file_get_size(ef) > 0) {
                 memcpy(def, file_get_data(ef), file_get_size(ef));
             }
             else {
-                memcpy(def, dek, IV_SIZE);
+                memcpy(def, random_dek, IV_SIZE);
             }
-            memcpy(def + IV_SIZE + 32*3, dek + IV_SIZE, 32);
+            memcpy(def + IV_SIZE + 32*3, random_dek + IV_SIZE, 32);
             hash_multi(defpin, sizeof(defpin), session_pwpiv);
             aes_encrypt_cfb_256(session_pwpiv, def, def + IV_SIZE + 32*3, 32);
             file_put_data(ef, def, sizeof(def));
 
             has_pwpiv = true;
             uint8_t *key = (uint8_t *)"\x01\x02\x03\x04\x05\x06\x07\x08\x01\x02\x03\x04\x05\x06\x07\x08\x01\x02\x03\x04\x05\x06\x07\x08";
-            file_t *ef = search_by_fid(EF_PIV_KEY_CARDMGM, NULL, SPECIFY_ANY);
-            file_put_data(ef, key, 24);
+            file_t *ef_cardmgm = search_by_fid(EF_PIV_KEY_CARDMGM, NULL, SPECIFY_ANY);
+            file_put_data(ef_cardmgm, key, 24);
             uint8_t meta[] = { PIV_ALGO_AES192, PINPOLICY_ALWAYS, TOUCHPOLICY_ALWAYS };
             meta_add(EF_PIV_KEY_CARDMGM, meta, sizeof(meta));
             has_pwpiv = false;
@@ -261,17 +263,17 @@ static void scan_files_piv() {
     low_flash_available();
 }
 
-void init_piv() {
+void init_piv(void) {
     scan_files_piv();
     has_pwpiv = false;
     // cmd_select();
 }
 
-int piv_unload() {
+static int piv_unload(void) {
     return PICOKEY_OK;
 }
 
-void select_piv_aid() {
+static void select_piv_aid(void) {
     res_APDU[res_APDU_size++] = 0x61;
     res_APDU[res_APDU_size++] = 0; //filled later
     res_APDU[res_APDU_size++] = 0x4F;
@@ -298,7 +300,7 @@ void select_piv_aid() {
     res_APDU[res_APDU_size++] = 0x00;
 }
 
-int piv_select_aid(app_t *a, uint8_t force) {
+static int piv_select_aid(app_t *a, uint8_t force) {
     (void) force;
     a->process_apdu = piv_process_apdu;
     a->unload = piv_unload;
@@ -312,14 +314,14 @@ INITIALIZER( piv_ctor ) {
     register_app(piv_select_aid, yk_aid);
 }
 
-static int cmd_version() {
+static int cmd_version(void) {
     res_APDU[res_APDU_size++] = PIV_VERSION_MAJOR;
     res_APDU[res_APDU_size++] = PIV_VERSION_MINOR;
     res_APDU[res_APDU_size++] = 0x0;
     return SW_OK();
 }
 
-static int cmd_select() {
+static int cmd_piv_select(void) {
     if (P2(apdu) != 0x1) {
         return SW_WRONG_P1P2();
     }
@@ -330,12 +332,13 @@ static int cmd_select() {
 }
 
 int piv_parse_discovery(const file_t *ef) {
+    (void) ef;
     memcpy(res_APDU, "\x7E\x12\x4F\x0B\xA0\x00\x00\x03\x08\x00\x00\x10\x00\x01\x00\x5F\x2F\x02\x40\x10", 20);
     res_APDU_size = 20;
     return res_APDU_size;
 }
 
-static int cmd_get_serial() {
+static int cmd_get_serial(void) {
     uint32_t serial = get_serial();
     res_APDU[res_APDU_size++] = serial >> 24;
     res_APDU[res_APDU_size++] = serial >> 16;
@@ -344,8 +347,7 @@ static int cmd_get_serial() {
     return SW_OK();
 }
 
-extern int check_pin(const file_t *pin, const uint8_t *data, size_t len);
-static int cmd_verify() {
+static int cmd_piv_verify(void) {
     uint8_t key_ref = P2(apdu);
     if (P1(apdu) != 0x00 && P1(apdu) != 0xFF) {
         return SW_INCORRECT_P1P2();
@@ -382,7 +384,7 @@ static int cmd_verify() {
     return set_res_sw(0x63, 0xc0 | retries);
 }
 
-static int cmd_get_data() {
+static int cmd_piv_get_data(void) {
     if (P1(apdu) != 0x3F || P2(apdu) != 0xFF) {
         return SW_INCORRECT_P1P2();
     }
@@ -402,7 +404,9 @@ static int cmd_get_data() {
         uint16_t data_len = 0;
         res_APDU_size = 2; // Minimum: TAG+LEN
         if ((ef->type & FILE_DATA_FUNC) == FILE_DATA_FUNC) {
-            data_len = ((int (*)(const file_t *))(ef->data))((const file_t *) ef);
+            int (*file_data_func)(const file_t *) = NULL;
+            memcpy(&file_data_func, &ef->data, sizeof(file_data_func));
+            data_len = file_data_func(ef);
         }
         else {
             if (ef->data) {
@@ -428,7 +432,7 @@ static int cmd_get_data() {
     return SW_OK();
 }
 
-static int cmd_get_metadata() {
+static int cmd_get_metadata(void) {
     if (P1(apdu) != 0x00) {
         return SW_INCORRECT_P1P2();
     }
@@ -561,7 +565,7 @@ static int cmd_get_metadata() {
 uint8_t challenge[16];
 bool has_challenge = false;
 bool has_mgm = false;
-static int cmd_authenticate() {
+static int cmd_authenticate(void) {
     uint8_t algo = P1(apdu), key_ref = P2(apdu);
     if (apdu.nc == 0) {
         return SW_WRONG_LENGTH();
@@ -838,7 +842,7 @@ static int cmd_authenticate() {
     return SW_OK();
 }
 
-static int cmd_asym_keygen() {
+static int cmd_asym_keygen(void) {
     uint8_t key_ref = P2(apdu);
     if (apdu.nc == 0) {
         return SW_WRONG_LENGTH();
@@ -945,7 +949,7 @@ static int cmd_asym_keygen() {
     return SW_OK();
 }
 
-static int cmd_put_data() {
+static int cmd_piv_put_data(void) {
     if (P1(apdu) != 0x3F || P2(apdu) != 0xFF) {
         return SW_INCORRECT_P1P2();
     }
@@ -974,7 +978,7 @@ static int cmd_put_data() {
     return SW_OK();
 }
 
-static int cmd_set_mgmkey() {
+static int cmd_set_mgmkey(void) {
     if (P1(apdu) != 0xFF) {
         return SW_INCORRECT_P1P2();
     }
@@ -1010,7 +1014,7 @@ static int cmd_set_mgmkey() {
     return SW_OK();
 }
 
-static int cmd_move_key() {
+static int cmd_move_key(void) {
     if (apdu.nc != 0) {
         return SW_WRONG_LENGTH();
     }
@@ -1115,7 +1119,7 @@ static int cmd_move_key() {
     return SW_OK();
 }
 
-static int cmd_change_pin() {
+static int cmd_piv_change_pin(void) {
     uint8_t pin_ref = P2(apdu);
     if (P1(apdu) != 0x0 || (pin_ref != 0x80 && pin_ref != 0x81)) {
         return SW_INCORRECT_P1P2();
@@ -1137,7 +1141,7 @@ static int cmd_change_pin() {
     return SW_OK();
 }
 
-static int cmd_reset_retry() {
+static int cmd_piv_reset_retry(void) {
     if (P1(apdu) != 0x0 || P2(apdu) != 0x80) {
         return SW_INCORRECT_P1P2();
     }
@@ -1160,7 +1164,7 @@ static int cmd_reset_retry() {
     return SW_OK();
 }
 
-static int cmd_set_retries() {
+static int cmd_set_retries(void) {
     file_t *ef = search_by_fid(EF_PW_RETRIES, NULL, SPECIFY_ANY);
     if (!ef) {
         return SW_MEMORY_FAILURE();
@@ -1191,7 +1195,7 @@ static int cmd_set_retries() {
     return SW_OK();
 }
 
-static int cmd_reset() {
+static int cmd_reset(void) {
     if (P1(apdu) != 0x0 || P2(apdu) != 0x0) {
         return SW_INCORRECT_P1P2();
     }
@@ -1210,7 +1214,7 @@ static int cmd_reset() {
     return SW_OK();
 }
 
-static int cmd_attestation() {
+static int cmd_attestation(void) {
     uint8_t key_ref = P1(apdu);
     if (P2(apdu) != 0x00) {
         return SW_INCORRECT_P1P2();
@@ -1265,7 +1269,7 @@ static int cmd_attestation() {
     return SW_OK();
 }
 
-static int cmd_import_asym() {
+static int cmd_import_asym(void) {
     uint8_t algo = P1(apdu), key_ref = P2(apdu);
     if (key_ref != EF_PIV_KEY_AUTHENTICATION && key_ref != EF_PIV_KEY_SIGNATURE && key_ref != EF_PIV_KEY_KEYMGM && key_ref != EF_PIV_KEY_CARDAUTH && !(key_ref >= EF_PIV_KEY_RETIRED1 && key_ref <= EF_PIV_KEY_RETIRED20)) {
         return SW_INCORRECT_P1P2();
@@ -1379,18 +1383,18 @@ static int cmd_import_asym() {
 
 static const cmd_t cmds[] = {
     { INS_VERSION, cmd_version },
-    { INS_SELECT, cmd_select },
+    { INS_SELECT, cmd_piv_select },
     { INS_YK_SERIAL, cmd_get_serial },
-    { INS_VERIFY, cmd_verify },
-    { INS_GET_DATA, cmd_get_data },
+    { INS_VERIFY, cmd_piv_verify },
+    { INS_GET_DATA, cmd_piv_get_data },
     { INS_GET_METADATA, cmd_get_metadata },
     { INS_AUTHENTICATE, cmd_authenticate },
     { INS_ASYM_KEYGEN, cmd_asym_keygen },
-    { INS_PUT_DATA, cmd_put_data },
+    { INS_PUT_DATA, cmd_piv_put_data },
     { INS_SET_MGMKEY, cmd_set_mgmkey },
     { INS_MOVE_KEY, cmd_move_key },
-    { INS_CHANGE_PIN, cmd_change_pin },
-    { INS_RESET_RETRY, cmd_reset_retry },
+    { INS_CHANGE_PIN, cmd_piv_change_pin },
+    { INS_RESET_RETRY, cmd_piv_reset_retry },
     { INS_SET_RETRIES, cmd_set_retries },
     { INS_RESET, cmd_reset },
     { INS_ATTESTATION, cmd_attestation },
@@ -1398,7 +1402,7 @@ static const cmd_t cmds[] = {
     { 0x00, 0x0 }
 };
 
-int piv_process_apdu() {
+int piv_process_apdu(void) {
     sm_unwrap();
     for (const cmd_t *cmd = cmds; cmd->ins != 0x00; cmd++) {
         if (cmd->ins == INS(apdu)) {

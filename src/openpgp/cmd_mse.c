@@ -17,7 +17,7 @@
 
 #include "openpgp.h"
 
-int cmd_mse() {
+int cmd_mse(void) {
     if (P1(apdu) != 0x41 || (P2(apdu) != 0xA4 && P2(apdu) != 0xB8)) {
         return SW_WRONG_P1P2();
     }

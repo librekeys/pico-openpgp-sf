@@ -17,7 +17,7 @@
 
 #include "openpgp.h"
 
-int cmd_put_data() {
+int cmd_put_data(void) {
     uint16_t fid = (P1(apdu) << 8) | P2(apdu);
     file_t *ef;
     if (fid == EF_RESET_CODE) {

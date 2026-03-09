@@ -89,13 +89,23 @@ if(NOT ESP_PLATFORM)
     target_sources(pico_openpgp PUBLIC ${SOURCES})
     target_include_directories(pico_openpgp PUBLIC ${INCLUDES})
 
-    target_compile_options(pico_openpgp PUBLIC
+    set(COMMON_COMPILE_OPTIONS
         -Wall
     )
+    target_compile_options(pico_openpgp PRIVATE ${COMMON_COMPILE_OPTIONS})
+
+    pico_keys_apply_strict_flags(
+        SOURCES ${SOURCES}
+        FILTER_REGEX "/src/openpgp/|/pico-keys-sdk/src/|/pico-keys-sdk/config/"
+    )
+
     if(NOT MSVC)
-        target_compile_options(pico_openpgp PUBLIC
-            -Werror
-        )
+        string(FIND ${CMAKE_C_COMPILER} ":" COMPILER_COLON)
+        if(${COMPILER_COLON} GREATER_EQUAL 0)
+            target_compile_options(pico_openpgp PRIVATE
+                -Wno-error=use-after-free
+            )
+        endif()
     endif()
 
     if(ENABLE_EMULATION)

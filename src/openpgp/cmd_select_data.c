@@ -17,7 +17,7 @@
 
 #include "openpgp.h"
 
-int cmd_select_data() {
+int cmd_select_data(void) {
     file_t *ef = NULL;
     uint16_t fid = 0x0;
     if (P2(apdu) != 0x4) {
@@ -26,7 +26,7 @@ int cmd_select_data() {
     if (apdu.data[0] != 0x60) {
         return SW_WRONG_DATA();
     }
-    if (apdu.nc != apdu.data[1] + 2 || apdu.nc < 5) {
+    if (apdu.nc != (uint32_t) apdu.data[1] + 2u || apdu.nc < 5u) {
         return SW_WRONG_LENGTH();
     }
     if (apdu.data[2] != 0x5C) {

@@ -18,7 +18,7 @@
 #include "openpgp.h"
 #include "random.h"
 
-int cmd_challenge() {
+int cmd_challenge(void) {
     uint8_t *rb = (uint8_t *) random_bytes_get(apdu.ne);
     if (!rb) {
         return SW_WRONG_LENGTH();

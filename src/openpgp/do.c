@@ -18,6 +18,20 @@
 #include "openpgp.h"
 #include "asn1.h"
 
+int parse_trium(uint16_t fid, uint8_t num, size_t size);
+int parse_ch_data(const file_t *f, int mode);
+int parse_sec_tpl(const file_t *f, int mode);
+int parse_ch_cert(const file_t *f, int mode);
+int parse_fp(const file_t *f, int mode);
+int parse_cafp(const file_t *f, int mode);
+int parse_ts(const file_t *f, int mode);
+int parse_keyinfo(const file_t *f, int mode);
+int parse_pw_status(const file_t *f, int mode);
+int parse_algo(const uint8_t *algo, uint16_t tag);
+int parse_algoinfo(const file_t *f, int mode);
+int parse_app_data(const file_t *f, int mode);
+int parse_discrete_do(const file_t *f, int mode);
+
 int parse_do(uint16_t *fids, int mode) {
     int len = 0;
     file_t *ef;
@@ -25,7 +39,9 @@ int parse_do(uint16_t *fids, int mode) {
         if ((ef = search_by_fid(fids[i + 1], NULL, SPECIFY_EF))) {
             uint16_t data_len;
             if ((ef->type & FILE_DATA_FUNC) == FILE_DATA_FUNC) {
-                data_len = ((int (*)(const file_t *, int))(ef->data))((const file_t *) ef, mode);
+                int (*file_data_func)(const file_t *, int) = NULL;
+                memcpy(&file_data_func, &ef->data, sizeof(file_data_func));
+                data_len = file_data_func(ef, mode);
             }
             else {
                 data_len = file_get_size(ef);
@@ -69,6 +85,7 @@ int parse_trium(uint16_t fid, uint8_t num, size_t size) {
 }
 
 int parse_ch_data(const file_t *f, int mode) {
+    (void) f;
     uint16_t fids[] = {
         3,
         EF_CH_NAME, EF_LANG_PREF, EF_SEX,
@@ -85,6 +102,8 @@ int parse_ch_data(const file_t *f, int mode) {
 }
 
 int parse_sec_tpl(const file_t *f, int mode) {
+    (void) f;
+    (void) mode;
     res_APDU[res_APDU_size++] = EF_SEC_TPL & 0xff;
     res_APDU[res_APDU_size++] = 5;
     file_t *ef = search_by_fid(EF_SIG_COUNT, NULL, SPECIFY_ANY);
@@ -98,28 +117,38 @@ int parse_sec_tpl(const file_t *f, int mode) {
 }
 
 int parse_ch_cert(const file_t *f, int mode) {
+    (void) f;
+    (void) mode;
     return 0;
 }
 
 int parse_fp(const file_t *f, int mode) {
+    (void) f;
+    (void) mode;
     res_APDU[res_APDU_size++] = EF_FP & 0xff;
     res_APDU[res_APDU_size++] = 60;
     return parse_trium(EF_FP_SIG, 3, 20) + 2;
 }
 
 int parse_cafp(const file_t *f, int mode) {
+    (void) f;
+    (void) mode;
     res_APDU[res_APDU_size++] = EF_CA_FP & 0xff;
     res_APDU[res_APDU_size++] = 60;
     return parse_trium(EF_FP_CA1, 3, 20) + 2;
 }
 
 int parse_ts(const file_t *f, int mode) {
+    (void) f;
+    (void) mode;
     res_APDU[res_APDU_size++] = EF_TS_ALL & 0xff;
     res_APDU[res_APDU_size++] = 12;
     return parse_trium(EF_TS_SIG, 3, 4) + 2;
 }
 
 int parse_keyinfo(const file_t *f, int mode) {
+    (void) f;
+    (void) mode;
     int init_len = res_APDU_size;
     if (res_APDU_size > 0) {
         res_APDU[res_APDU_size++] = EF_KEY_INFO & 0xff;
@@ -155,6 +184,8 @@ int parse_keyinfo(const file_t *f, int mode) {
 }
 
 int parse_pw_status(const file_t *f, int mode) {
+    (void) f;
+    (void) mode;
     file_t *ef;
     int init_len = res_APDU_size;
     if (res_APDU_size > 0) {
@@ -278,6 +309,7 @@ int parse_algo(const uint8_t *algo, uint16_t tag) {
 }
 
 int parse_algoinfo(const file_t *f, int mode) {
+    (void) mode;
     int datalen = 0;
     if (f->fid == EF_ALGO_INFO) {
         res_APDU[res_APDU_size++] = EF_ALGO_INFO & 0xff;
@@ -356,6 +388,7 @@ int parse_algoinfo(const file_t *f, int mode) {
 }
 
 int parse_app_data(const file_t *f, int mode) {
+    (void) f;
     uint16_t fids[] = {
         6,
         EF_FULL_AID, EF_HIST_BYTES, EF_EXLEN_INFO, EF_GFM, EF_DISCRETE_DO, EF_KEY_INFO
@@ -372,6 +405,7 @@ int parse_app_data(const file_t *f, int mode) {
 }
 
 int parse_discrete_do(const file_t *f, int mode) {
+    (void) f;
     uint16_t fids[] = {
         11,
         EF_EXT_CAP, EF_ALGO_SIG, EF_ALGO_DEC, EF_ALGO_AUT, EF_PW_STATUS, EF_FP, EF_CA_FP, EF_TS_ALL,

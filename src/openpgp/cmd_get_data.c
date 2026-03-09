@@ -20,7 +20,7 @@
 
 extern bool is_gpg;
 
-int cmd_get_data() {
+int cmd_get_data(void) {
     if (apdu.nc > 0) {
         return SW_WRONG_LENGTH();
     }
@@ -115,7 +115,7 @@ int cmd_get_data() {
     return SW_OK();
 }
 
-int cmd_get_next_data() {
+int cmd_get_next_data(void) {
     file_t *ef = NULL;
     if (apdu.nc > 0) {
         return SW_WRONG_LENGTH();
@@ -141,7 +141,7 @@ int cmd_get_next_data() {
     return cmd_get_data();
 }
 
-int cmd_get_bulk_data() {
+int cmd_get_bulk_data(void) {
     if (apdu.nc < 3) {
         return SW_WRONG_LENGTH();
     }

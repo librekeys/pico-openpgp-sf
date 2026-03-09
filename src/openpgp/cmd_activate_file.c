@@ -17,6 +17,6 @@
 
 #include "openpgp.h"
 
-int cmd_activate_file() {
+int cmd_activate_file(void) {
     return SW_OK();
 }

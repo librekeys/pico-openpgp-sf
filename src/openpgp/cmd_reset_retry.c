@@ -18,7 +18,7 @@
 #include "openpgp.h"
 #include "otp.h"
 
-int cmd_reset_retry() {
+int cmd_reset_retry(void) {
     if (P2(apdu) != 0x81) {
         return SW_REFERENCE_NOT_FOUND();
     }
