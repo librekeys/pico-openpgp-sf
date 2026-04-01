@@ -37,33 +37,34 @@ int cmd_change_pin(void) {
         return SW_EXEC_ERROR();
     }
 
-    if (otp_key_1) {
-        for (int i = 0; i < 32; i++) {
-            dek[IV_SIZE + i] ^= otp_key_1[i];
-        }
-    }
-    uint8_t dhash[33];
+    uint8_t dhash[34];
     dhash[0] = apdu.nc - pin_len;
-    double_hash_pin(apdu.data + pin_len, apdu.nc - pin_len, dhash + 1);
+    dhash[1] = 0x1; // Format
+    pin_derive_verifier(apdu.data + pin_len, apdu.nc - pin_len, dhash + 2);
     file_put_data(pw, dhash, sizeof(dhash));
 
-    file_t *tf = search_by_fid(EF_DEK, NULL, SPECIFY_EF);
-    if (!tf) {
-        return SW_REFERENCE_NOT_FOUND();
-    }
-    uint8_t def[IV_SIZE + 32 + 32 + 32 + 32] = {0};
-    memcpy(def, file_get_data(tf), file_get_size(tf));
     if (P2(apdu) == 0x81) {
-        hash_multi(apdu.data + pin_len, apdu.nc - pin_len, session_pw1);
-        memcpy(def + IV_SIZE, dek + IV_SIZE, 32);
-        aes_encrypt_cfb_256(session_pw1, def, def + IV_SIZE, 32);
+        file_t *tf = search_by_fid(EF_DEK_PW1, NULL, SPECIFY_EF);
+        if (!tf) {
+            return SW_REFERENCE_NOT_FOUND();
+        }
+        uint8_t def[DEK_FILE_SIZE];
+        def[0] = 0x3;
+        pin_derive_session(apdu.data + pin_len, apdu.nc - pin_len, session_pw1);
+        encrypt_with_aad(session_pw1, dek, DEK_SIZE, PIN_KDF_DEFAULT_VERSION, def + 1);
+        r = file_put_data(tf, def, sizeof(def));
     }
     else if (P2(apdu) == 0x83) {
-        hash_multi(apdu.data + pin_len, apdu.nc - pin_len, session_pw3);
-        memcpy(def + IV_SIZE + 32 + 32, dek + IV_SIZE, 32);
-        aes_encrypt_cfb_256(session_pw3, def, def + IV_SIZE + 32 + 32, 32);
+        file_t *tf = search_by_fid(EF_DEK_PW3, NULL, SPECIFY_EF);
+        if (!tf) {
+            return SW_REFERENCE_NOT_FOUND();
+        }
+        uint8_t def[DEK_FILE_SIZE];
+        def[0] = 0x3;
+        pin_derive_session(apdu.data + pin_len, apdu.nc - pin_len, session_pw3);
+        encrypt_with_aad(session_pw3, dek, DEK_SIZE, PIN_KDF_DEFAULT_VERSION, def + 1);
+        r = file_put_data(tf, def, sizeof(def));
     }
-    file_put_data(tf, def, sizeof(def));
     low_flash_available();
     return SW_OK();
 }

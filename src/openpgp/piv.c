@@ -197,42 +197,35 @@ static void scan_files_piv(void) {
         }
     }
     bool reset_dek = false;
-    if ((ef = search_by_fid(EF_DEK, NULL, SPECIFY_ANY))) {
-        if (file_get_size(ef) == 0 || file_get_size(ef) == IV_SIZE+32*3) {
-            printf("DEK is empty or older\r\n");
-            const uint8_t defpin[6] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36 };
-            const uint8_t *random_dek = random_bytes_get(IV_SIZE + 32);
-            uint8_t def[IV_SIZE + 32 + 32 + 32 + 32];
-            if (file_get_size(ef) > 0) {
-                memcpy(def, file_get_data(ef), file_get_size(ef));
-            }
-            else {
-                memcpy(def, random_dek, IV_SIZE);
-            }
-            memcpy(def + IV_SIZE + 32*3, random_dek + IV_SIZE, 32);
-            hash_multi(defpin, sizeof(defpin), session_pwpiv);
-            aes_encrypt_cfb_256(session_pwpiv, def, def + IV_SIZE + 32*3, 32);
-            file_put_data(ef, def, sizeof(def));
+    if ((ef = search_by_fid(EF_DEK_PWPIV, NULL, SPECIFY_ANY)) && !file_has_data(ef)) {
+        printf("DEK PIV is empty or older\r\n");
+        const uint8_t defpin[8] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36 };
+        const uint8_t *random_dek = random_bytes_get(IV_SIZE + 32);
 
-            has_pwpiv = true;
-            uint8_t *key = (uint8_t *)"\x01\x02\x03\x04\x05\x06\x07\x08\x01\x02\x03\x04\x05\x06\x07\x08\x01\x02\x03\x04\x05\x06\x07\x08";
-            file_t *ef_cardmgm = search_by_fid(EF_PIV_KEY_CARDMGM, NULL, SPECIFY_ANY);
-            file_put_data(ef_cardmgm, key, 24);
-            uint8_t meta[] = { PIV_ALGO_AES192, PINPOLICY_ALWAYS, TOUCHPOLICY_ALWAYS };
-            meta_add(EF_PIV_KEY_CARDMGM, meta, sizeof(meta));
-            has_pwpiv = false;
-            memset(session_pwpiv, 0, sizeof(session_pwpiv));
+        uint8_t def[DEK_FILE_SIZE];
+        def[0] = 0x3; // Format
 
-            reset_dek = true;
-        }
+        pin_derive_session(defpin, sizeof(defpin), session_pwpiv);
+        encrypt_with_aad(session_pwpiv, random_dek, DEK_SIZE, PIN_KDF_DEFAULT_VERSION, def + 1);
+        mbedtls_platform_zeroize(session_pwpiv, sizeof(session_pwpiv));
+        file_put_data(ef, def, sizeof(def));
+
+        uint8_t *key = (uint8_t *)"\x01\x02\x03\x04\x05\x06\x07\x08\x01\x02\x03\x04\x05\x06\x07\x08\x01\x02\x03\x04\x05\x06\x07\x08";
+        file_t *ef_cardmgm = search_by_fid(EF_PIV_KEY_CARDMGM, NULL, SPECIFY_ANY);
+        file_put_data(ef_cardmgm, key, 24);
+        uint8_t meta[] = { PIV_ALGO_AES192, PINPOLICY_ALWAYS, TOUCHPOLICY_ALWAYS };
+        meta_add(EF_PIV_KEY_CARDMGM, meta, sizeof(meta));
+
+        reset_dek = true;
     }
     if ((ef = search_by_fid(EF_PIV_PIN, NULL, SPECIFY_ANY))) {
         if (!ef->data || reset_dek) {
             printf("PIV PIN is empty. Initializing with default password\r\n");
             const uint8_t def[8] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0xFF, 0xFF };
-            uint8_t dhash[33];
+            uint8_t dhash[34];
             dhash[0] = sizeof(def);
-            double_hash_pin(def, sizeof(def), dhash + 1);
+            dhash[1] = 0x1; // Format
+            pin_derive_verifier(def, sizeof(def), dhash + 2);
             file_put_data(ef, dhash, sizeof(dhash));
         }
     }
@@ -240,9 +233,10 @@ static void scan_files_piv(void) {
         if (!ef->data) {
             printf("PIV PUK is empty. Initializing with default password\r\n");
             const uint8_t def[8] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38 };
-            uint8_t dhash[33];
+            uint8_t dhash[34];
             dhash[0] = sizeof(def);
-            double_hash_pin(def, sizeof(def), dhash + 1);
+            dhash[1] = 0x1; // Format
+            pin_derive_verifier(def, sizeof(def), dhash + 2);
             file_put_data(ef, dhash, sizeof(dhash));
         }
     }
@@ -531,15 +525,16 @@ static int cmd_get_metadata(void) {
         uint8_t dhash[32];
         int32_t eq = 0;
         if (key_ref == EF_PIV_PIN) {
-            double_hash_pin((const uint8_t *)"\x31\x32\x33\x34\x35\x36\xFF\xFF", 8, dhash);
+            pin_derive_verifier((const uint8_t *)"\x31\x32\x33\x34\x35\x36\xFF\xFF", 8, dhash);
             eq = memcmp(dhash, file_get_data(ef_key) + 1, file_get_size(ef_key) - 1);
         }
         else if (key_ref == EF_PIV_PUK) {
-            double_hash_pin((const uint8_t *)"\x31\x32\x33\x34\x35\x36\x37\x38", 8, dhash);
+            pin_derive_verifier((const uint8_t *)"\x31\x32\x33\x34\x35\x36\x37\x38", 8, dhash);
             eq = memcmp(dhash, file_get_data(ef_key) + 1, file_get_size(ef_key) - 1);
         }
         else if (key_ref == EF_PIV_KEY_CARDMGM) {
-            eq = memcmp("\x01\x02\x03\x04\x05\x06\x07\x08\x01\x02\x03\x04\x05\x06\x07\x08\x01\x02\x03\x04\x05\x06\x07\x08", file_get_data(ef_key), file_get_size(ef_key));
+            pin_derive_verifier((const uint8_t *)"\x01\x02\x03\x04\x05\x06\x07\x08\x01\x02\x03\x04\x05\x06\x07\x08\x01\x02\x03\x04\x05\x06\x07\x08", 24, dhash);
+            eq = memcmp(dhash, file_get_data(ef_key), file_get_size(ef_key));
         }
         res_APDU[res_APDU_size++] = 0x5;
         res_APDU[res_APDU_size++] = 1;
@@ -1133,9 +1128,11 @@ static int cmd_piv_change_pin(void) {
     if (ret != 0x9000) {
         return ret;
     }
-    uint8_t dhash[33];
+
+    uint8_t dhash[34];
     dhash[0] = pin_len;
-    double_hash_pin(apdu.data + pin_data[0], pin_len, dhash + 1);
+    dhash[1] = 0x1; // Format
+    pin_derive_verifier(apdu.data + pin_data[0], pin_len, dhash + 2);
     file_put_data(ef, dhash, sizeof(dhash));
     low_flash_available();
     return SW_OK();
@@ -1154,9 +1151,10 @@ static int cmd_piv_reset_retry(void) {
     if (ret != 0x9000) {
         return ret;
     }
-    uint8_t dhash[33];
+    uint8_t dhash[34];
     dhash[0] = pin_len;
-    double_hash_pin(apdu.data + puk_data[0], pin_len, dhash + 1);
+    dhash[1] = 0x1; // Format
+    pin_derive_verifier(apdu.data + puk_data[0], pin_len, dhash + 2);
     ef = search_by_fid(EF_PIV_PIN, NULL, SPECIFY_ANY);
     file_put_data(ef, dhash, sizeof(dhash));
     pin_reset_retries(ef, true);
@@ -1178,16 +1176,19 @@ static int cmd_set_retries(void) {
 
     ef = search_by_fid(EF_PIV_PIN, NULL, SPECIFY_ANY);
     const uint8_t def_pin[8] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0xFF, 0xFF };
-    uint8_t dhash[33];
+
+    uint8_t dhash[34];
     dhash[0] = sizeof(def_pin);
-    double_hash_pin(def_pin, sizeof(def_pin), dhash + 1);
+    dhash[1] = 0x1; // Format
+    pin_derive_verifier(def_pin, sizeof(def_pin), dhash + 2);
     file_put_data(ef, dhash, sizeof(dhash));
     pin_reset_retries(ef, true);
 
     ef = search_by_fid(EF_PIV_PUK, NULL, SPECIFY_ANY);
     const uint8_t def_puk[8] = {0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38};
     dhash[0] = sizeof(def_puk);
-    double_hash_pin(def_puk, sizeof(def_puk), dhash + 1);
+    dhash[1] = 0x1; // Format
+    pin_derive_verifier(def_puk, sizeof(def_puk), dhash + 2);
     file_put_data(ef, dhash, sizeof(dhash));
     pin_reset_retries(ef, true);
 

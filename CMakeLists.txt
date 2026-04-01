@@ -17,6 +17,8 @@
 
 cmake_minimum_required(VERSION 3.13)
 
+option(OPENPGP_TEST_INIT_LEGACY_PIN "Bootstrap legacy PIN/DEK format for migration tests" OFF)
+
 set(USB_VID 0x2E8A)
 set(USB_PID 0x10FF)
 
@@ -88,6 +90,9 @@ set(INCLUDES ${INCLUDES}
 if(NOT ESP_PLATFORM)
     target_sources(pico_openpgp PUBLIC ${SOURCES})
     target_include_directories(pico_openpgp PUBLIC ${INCLUDES})
+    if(OPENPGP_TEST_INIT_LEGACY_PIN)
+        target_compile_definitions(pico_openpgp PRIVATE OPENPGP_TEST_INIT_LEGACY_PIN=1)
+    endif()
 
     set(COMMON_COMPILE_OPTIONS
         -Wall

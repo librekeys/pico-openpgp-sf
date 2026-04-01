@@ -53,20 +53,21 @@ int cmd_put_data(void) {
                 if ((r = load_dek()) != PICOKEY_OK) {
                     return SW_EXEC_ERROR();
                 }
-                uint8_t dhash[33];
+                uint8_t dhash[34];
                 dhash[0] = apdu.nc;
-                double_hash_pin(apdu.data, apdu.nc, dhash + 1);
-                r = file_put_data(ef, dhash, sizeof(dhash));
+                dhash[1] = 0x1; // Format
+                pin_derive_verifier(apdu.data, apdu.nc, dhash + 2);
+                file_put_data(ef, dhash, sizeof(dhash));
 
                 file_t *tf = search_by_fid(EF_DEK, NULL, SPECIFY_EF);
                 if (!tf) {
                     return SW_REFERENCE_NOT_FOUND();
                 }
-                uint8_t def[IV_SIZE + 32 + 32 + 32 + 32];
-                memcpy(def, file_get_data(tf), file_get_size(tf));
-                hash_multi(apdu.data, apdu.nc, session_rc);
-                memcpy(def + IV_SIZE + 32, dek + IV_SIZE, 32);
-                aes_encrypt_cfb_256(session_rc, def, def + IV_SIZE + 32, 32);
+
+                uint8_t def[DEK_FILE_SIZE];
+                def[0] = 0x3;
+                pin_derive_session(apdu.data, apdu.nc, session_rc);
+                encrypt_with_aad(session_rc, dek, DEK_SIZE, PIN_KDF_DEFAULT_VERSION, def + 1);
                 r = file_put_data(tf, def, sizeof(def));
             }
             else {

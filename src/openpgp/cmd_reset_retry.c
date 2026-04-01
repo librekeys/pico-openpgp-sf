@@ -44,7 +44,7 @@ int cmd_reset_retry(void) {
             }
             newpin_len = apdu.nc - pin_len;
             has_rc = true;
-            hash_multi(apdu.data, pin_len, session_rc);
+            pin_derive_session(apdu.data, pin_len, session_rc);
             has_pw1 = has_pw3 = false;
             isUserAuthenticated = false;
         }
@@ -58,25 +58,20 @@ int cmd_reset_retry(void) {
         if ((r = load_dek()) != PICOKEY_OK) {
             return SW_EXEC_ERROR();
         }
-        file_t *tf = search_by_fid(EF_DEK, NULL, SPECIFY_EF);
+        file_t *tf = search_by_fid(EF_DEK_PW1, NULL, SPECIFY_EF);
         if (!tf) {
             return SW_REFERENCE_NOT_FOUND();
         }
-        if (otp_key_1) {
-            for (int i = 0; i < 32; i++) {
-                dek[IV_SIZE + i] ^= otp_key_1[i];
-            }
-        }
-        uint8_t def[IV_SIZE + 32 + 32 + 32 + 32];
-        memcpy(def, file_get_data(tf), file_get_size(tf));
-        hash_multi(apdu.data + (apdu.nc - newpin_len), newpin_len, session_pw1);
-        memcpy(def + IV_SIZE, dek + IV_SIZE, 32);
-        aes_encrypt_cfb_256(session_pw1, def, def + IV_SIZE, 32);
+        uint8_t def[DEK_FILE_SIZE];
+        def[0] = 0x03;
+        pin_derive_session(apdu.data + (apdu.nc - newpin_len), newpin_len, session_pw1);
+        encrypt_with_aad(session_pw1, dek, DEK_SIZE, PIN_KDF_DEFAULT_VERSION, def + 1);
         r = file_put_data(tf, def, sizeof(def));
 
-        uint8_t dhash[33];
+        uint8_t dhash[34];
         dhash[0] = newpin_len;
-        double_hash_pin(apdu.data + (apdu.nc - newpin_len), newpin_len, dhash + 1);
+        dhash[1] = 0x1; // Format
+        pin_derive_verifier(apdu.data + (apdu.nc - newpin_len), newpin_len, dhash + 2);
         file_put_data(pw, dhash, sizeof(dhash));
         if (pin_reset_retries(pw, true) != PICOKEY_OK) {
             return SW_MEMORY_FAILURE();

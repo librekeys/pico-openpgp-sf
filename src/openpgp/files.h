@@ -36,6 +36,10 @@
 #define EF_PB_DEC       0x10d5
 #define EF_PB_AUT       0x10d6
 #define EF_DEK          0x1099
+#define EF_DEK_PW1      0x109a
+#define EF_DEK_RC       0x109b
+#define EF_DEK_PW3      0x109c
+#define EF_DEK_PWPIV    0x109d
 #define EF_CH_1         0x1f21
 #define EF_CH_2         0x1f22
 #define EF_CH_3         0x1f23

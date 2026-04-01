@@ -41,7 +41,7 @@ bool has_rc = false;
 uint8_t session_pw1[32];
 uint8_t session_rc[32];
 uint8_t session_pw3[32];
-uint8_t dek[IV_SIZE + 32];
+uint8_t dek[DEK_SIZE];
 uint16_t algo_dec = EF_ALGO_PRIV2, algo_aut = EF_ALGO_PRIV3, pk_dec = EF_PK_DEC, pk_aut = EF_PK_AUT;
 
 uint8_t openpgp_aid[] = {
@@ -107,37 +107,64 @@ void scan_files_openpgp(void) {
         memcpy(ef->data + 12, pico_serial.id, 4);
     }
     bool reset_dek = false;
-    if ((ef = search_by_fid(EF_DEK, NULL, SPECIFY_ANY))) {
-        if (!ef->data) {
-            printf("DEK is empty\r\n");
-            const uint8_t def1[6] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36 };
-            const uint8_t def3[8] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38 };
+    bool bootstrap_legacy = false;
+    file_t *ef_dek = search_by_fid(EF_DEK, NULL, SPECIFY_ANY), *ef_dek_pw1 = search_by_fid(EF_DEK_PW1, NULL, SPECIFY_ANY), *ef_dek_rc = search_by_fid(EF_DEK_RC, NULL, SPECIFY_ANY), *ef_dek_pw3 = search_by_fid(EF_DEK_PW3, NULL, SPECIFY_ANY);
+    if (!file_has_data(ef_dek_pw1) && !file_has_data(ef_dek_rc) && !file_has_data(ef_dek_pw3) && !file_has_data(ef_dek)) {
+        printf("DEK are empty\r\n");
+        const uint8_t *random_dek = random_bytes_get(DEK_SIZE);
+        const uint8_t def1[6] = {0x31, 0x32, 0x33, 0x34, 0x35, 0x36};
+        const uint8_t def3[8] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38 };
+#ifdef OPENPGP_TEST_INIT_LEGACY_PIN
+        /* Test hook: bootstrap legacy PIN+DEK format to validate runtime migration paths. */
 
-            uint8_t def[IV_SIZE + 32 + 32 + 32];
-            const uint8_t *random_dek = random_bytes_get(IV_SIZE + 32);
-            memcpy(def, random_dek, IV_SIZE + 32);
-            memcpy(def + IV_SIZE + 32, random_dek + IV_SIZE, 32);
-            memcpy(def + IV_SIZE + 32 + 32, random_dek + IV_SIZE, 32);
-            hash_multi(def1, sizeof(def1), session_pw1);
-            aes_encrypt_cfb_256(session_pw1, def, def + IV_SIZE, 32);
-            memset(session_pw1, 0, sizeof(session_pw1));
+        uint8_t def[IV_SIZE + 32 + 32 + 32];
+        memcpy(def, random_dek, IV_SIZE + 32);
+        memcpy(def + IV_SIZE + 32, random_dek + IV_SIZE, 32);
+        memcpy(def + IV_SIZE + 32 + 32, random_dek + IV_SIZE, 32);
+        hash_multi(def1, sizeof(def1), session_pw1);
+        aes_encrypt_cfb_256(session_pw1, def, def + IV_SIZE, 32);
+        memset(session_pw1, 0, sizeof(session_pw1));
 
-            hash_multi(def3, sizeof(def3), session_pw3);
-            aes_encrypt_cfb_256(session_pw3, def, def + IV_SIZE + 32, 32);
-            aes_encrypt_cfb_256(session_pw3, def, def + IV_SIZE + 32 + 32, 32);
-            memset(session_pw3, 0, sizeof(session_pw3));
-            file_put_data(ef, def, sizeof(def));
-            reset_dek = true;
-        }
+        hash_multi(def3, sizeof(def3), session_pw3);
+        aes_encrypt_cfb_256(session_pw3, def, def + IV_SIZE + 32, 32);
+        aes_encrypt_cfb_256(session_pw3, def, def + IV_SIZE + 32 + 32, 32);
+        memset(session_pw3, 0, sizeof(session_pw3));
+        file_put_data(ef_dek, def, sizeof(def));
+        bootstrap_legacy = true;
+#else
+        uint8_t def[DEK_FILE_SIZE];
+        def[0] = 0x3; // Format
+
+        pin_derive_session(def1, sizeof(def1), session_pw1);
+        encrypt_with_aad(session_pw1, random_dek, DEK_SIZE, PIN_KDF_DEFAULT_VERSION, def + 1);
+        mbedtls_platform_zeroize(session_pw1, sizeof(session_pw1));
+        file_put_data(ef_dek_pw1, def, sizeof(def));
+
+        pin_derive_session(def3, sizeof(def3), session_pw3);
+        encrypt_with_aad(session_pw3, random_dek, DEK_SIZE, PIN_KDF_DEFAULT_VERSION, def + 1);
+        mbedtls_platform_zeroize(session_pw3, sizeof(session_pw3));
+        file_put_data(ef_dek_rc, def, sizeof(def));
+        file_put_data(ef_dek_pw3, def, sizeof(def));
+#endif
+
+        reset_dek = true;
     }
     if ((ef = search_by_fid(EF_PW1, NULL, SPECIFY_ANY))) {
         if (!ef->data || reset_dek) {
             printf("PW1 is empty. Initializing with default password\r\n");
             const uint8_t def[6] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36 };
-            uint8_t dhash[33];
-            dhash[0] = sizeof(def);
-            double_hash_pin(def, sizeof(def), dhash + 1);
-            file_put_data(ef, dhash, sizeof(dhash));
+            uint8_t dhash[34];
+            if (bootstrap_legacy) {
+                dhash[0] = sizeof(def);
+                double_hash_pin(def, sizeof(def), dhash + 1);
+                file_put_data(ef, dhash, 33);
+            }
+            else {
+                dhash[0] = sizeof(def);
+                dhash[1] = 0x1; // Format
+                pin_derive_verifier(def, sizeof(def), dhash + 2);
+                file_put_data(ef, dhash, sizeof(dhash));
+            }
         }
     }
     if ((ef = search_by_fid(EF_RC, NULL, SPECIFY_ANY))) {
@@ -145,10 +172,18 @@ void scan_files_openpgp(void) {
             printf("RC is empty. Initializing with default password\r\n");
 
             const uint8_t def[8] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38 };
-            uint8_t dhash[33];
-            dhash[0] = sizeof(def);
-            double_hash_pin(def, sizeof(def), dhash + 1);
-            file_put_data(ef, dhash, sizeof(dhash));
+            uint8_t dhash[34];
+            if (bootstrap_legacy) {
+                dhash[0] = sizeof(def);
+                double_hash_pin(def, sizeof(def), dhash + 1);
+                file_put_data(ef, dhash, 33);
+            }
+            else {
+                dhash[0] = sizeof(def);
+                dhash[1] = 0x1; // Format
+                pin_derive_verifier(def, sizeof(def), dhash + 2);
+                file_put_data(ef, dhash, sizeof(dhash));
+            }
         }
     }
     if ((ef = search_by_fid(EF_PW3, NULL, SPECIFY_ANY))) {
@@ -156,10 +191,18 @@ void scan_files_openpgp(void) {
             printf("PW3 is empty. Initializing with default password\r\n");
 
             const uint8_t def[8] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38 };
-            uint8_t dhash[33];
-            dhash[0] = sizeof(def);
-            double_hash_pin(def, sizeof(def), dhash + 1);
-            file_put_data(ef, dhash, sizeof(dhash));
+            uint8_t dhash[34];
+            if (bootstrap_legacy) {
+                dhash[0] = sizeof(def);
+                double_hash_pin(def, sizeof(def), dhash + 1);
+                file_put_data(ef, dhash, 33);
+            }
+            else {
+                dhash[0] = sizeof(def);
+                dhash[1] = 0x1; // Format
+                pin_derive_verifier(def, sizeof(def), dhash + 2);
+                file_put_data(ef, dhash, sizeof(dhash));
+            }
         }
     }
     if ((ef = search_by_fid(EF_SIG_COUNT, NULL, SPECIFY_ANY))) {
@@ -231,33 +274,76 @@ int load_dek(void) {
     if (!has_pw1 && !has_pw2 && !has_pw3 && !has_pwpiv) {
         return PICOKEY_NO_LOGIN;
     }
-    file_t *tf = search_by_fid(EF_DEK, NULL, SPECIFY_EF);
-    if (!tf) {
-        return PICOKEY_ERR_FILE_NOT_FOUND;
-    }
     int r = PICOKEY_OK;
+
     if (has_pw1 || has_pw2) {
-        memcpy(dek, file_get_data(tf), IV_SIZE + 32);
-        r = aes_decrypt_cfb_256(session_pw1, dek, dek + IV_SIZE, 32);
+        file_t *ef_dek_pw1 = search_file(EF_DEK_PW1);
+        if (file_has_data(ef_dek_pw1)) {
+            uint8_t *ef_data = file_get_data(ef_dek_pw1);
+            if (ef_data[0] == 0x3) { // Format
+                r = decrypt_with_aad(session_pw1, ef_data + 1, DEK_AAD_SIZE, PIN_KDF_DEFAULT_VERSION, dek);
+            }
+            else {
+                return PICOKEY_ERR_NULL_PARAM;
+            }
+        }
+        else {
+            file_t *tf = search_by_fid(EF_DEK, NULL, SPECIFY_EF);
+            if (!tf) {
+                return PICOKEY_ERR_FILE_NOT_FOUND;
+            }
+
+            memcpy(dek, file_get_data(tf), IV_SIZE + 32);
+            r = aes_decrypt_cfb_256(session_pw1, dek, dek + IV_SIZE, 32);
+        }
     }
     else if (has_pw3) {
-        memcpy(dek, file_get_data(tf), IV_SIZE);
-        memcpy(dek + IV_SIZE, file_get_data(tf) + IV_SIZE + 32 + 32, 32);
-        r = aes_decrypt_cfb_256(session_pw3, dek, dek + IV_SIZE, 32);
+        file_t *ef_dek_pw3 = search_file(EF_DEK_PW3);
+        if (file_has_data(ef_dek_pw3)) {
+            uint8_t *ef_data = file_get_data(ef_dek_pw3);
+            if (ef_data[0] == 0x3) { // Format
+                r = decrypt_with_aad(session_pw3, ef_data + 1, DEK_AAD_SIZE, PIN_KDF_DEFAULT_VERSION, dek);
+            }
+            else {
+                return PICOKEY_ERR_NULL_PARAM;
+            }
+        }
+        else {
+            file_t *tf = search_by_fid(EF_DEK, NULL, SPECIFY_EF);
+            if (!tf) {
+                return PICOKEY_ERR_FILE_NOT_FOUND;
+            }
+
+            memcpy(dek, file_get_data(tf), IV_SIZE);
+            memcpy(dek + IV_SIZE, file_get_data(tf) + IV_SIZE + 32 + 32, 32);
+            r = aes_decrypt_cfb_256(session_pw3, dek, dek + IV_SIZE, 32);
+        }
     }
     else if (has_pwpiv) {
-        memcpy(dek, file_get_data(tf), IV_SIZE);
-        memcpy(dek + IV_SIZE, file_get_data(tf) + IV_SIZE + 32 + 32 + 32, 32);
-        r = aes_decrypt_cfb_256(session_pwpiv, dek, dek + IV_SIZE, 32);
+        file_t *ef_dek_pwpiv = search_file(EF_DEK_PWPIV);
+        if (file_has_data(ef_dek_pwpiv)) {
+            uint8_t *ef_data = file_get_data(ef_dek_pwpiv);
+            if (ef_data[0] == 0x3) { // Format
+                r = decrypt_with_aad(session_pwpiv, ef_data + 1, DEK_AAD_SIZE, PIN_KDF_DEFAULT_VERSION, dek);
+            }
+            else {
+                return PICOKEY_ERR_NULL_PARAM;
+            }
+        }
+        else {
+            file_t *tf = search_by_fid(EF_DEK, NULL, SPECIFY_EF);
+            if (!tf) {
+                return PICOKEY_ERR_FILE_NOT_FOUND;
+            }
+
+            memcpy(dek, file_get_data(tf), IV_SIZE);
+            memcpy(dek + IV_SIZE, file_get_data(tf) + IV_SIZE + 32 + 32 + 32, 32);
+            r = aes_decrypt_cfb_256(session_pwpiv, dek, dek + IV_SIZE, 32);
+        }
     }
     if (r != 0) {
         release_dek();
         return PICOKEY_EXEC_ERROR;
-    }
-    if (otp_key_1) {
-        for (int i = 0; i < 32; i++) {
-            dek[IV_SIZE + i] ^= otp_key_1[i];
-        }
     }
     return PICOKEY_OK;
 }
@@ -389,21 +475,24 @@ static int pin_wrong_retry(const file_t *pin) {
 }
 
 int check_pin(const file_t *pin, const uint8_t *data, size_t len) {
-    if (!pin) {
-        return SW_REFERENCE_NOT_FOUND();
-    }
-    if (!pin->data) {
+    if (!file_has_data(pin)) {
         return SW_REFERENCE_NOT_FOUND();
     }
     isUserAuthenticated = false;
     //has_pw1 = has_pw3 = false;
 
-    uint8_t dhash[32];
-    double_hash_pin(data, len, dhash);
-    if (sizeof(dhash) != file_get_size(pin) - 1) { //1 byte for pin len
+    uint8_t dhash[32], off = 2;
+    if (file_get_size(pin) == 33) {
+        off = 1;
+        double_hash_pin(data, len, dhash);
+    }
+    else {
+        pin_derive_verifier(data, len, dhash);
+    }
+    if (sizeof(dhash) != file_get_size(pin) - off) { //1 byte for pin len and 1 byte for format
         return SW_CONDITIONS_NOT_SATISFIED();
     }
-    if (memcmp(file_get_data(pin) + 1, dhash, sizeof(dhash)) != 0) {
+    if (memcmp(file_get_data(pin) + off, dhash, sizeof(dhash)) != 0) {
         int retries;
         if ((retries = pin_wrong_retry(pin)) < PICOKEY_OK) {
             return SW_PIN_BLOCKED();
@@ -418,6 +507,75 @@ int check_pin(const file_t *pin, const uint8_t *data, size_t len) {
     if (r != PICOKEY_OK) {
         return SW_MEMORY_FAILURE();
     }
+    if (off == 1) {
+        uint8_t pin_data[34], *pin_sp = NULL;
+        pin_data[0] = len;
+        pin_data[1] = 0x1; // Format
+        pin_derive_verifier(data, len, pin_data + 2);
+        file_put_data((file_t *)pin, pin_data, sizeof(pin_data));
+        has_pw1 = has_pw2 = has_pw3 = false;
+
+        if (pin->fid == EF_PW1) {
+            if (P2(apdu) == 0x81) {
+                has_pw1 = true;
+            }
+            else {
+                has_pw2 = true;
+            }
+            pin_sp = session_pw1;
+        }
+        else if (pin->fid == EF_PW3) {
+            has_pw3 = true;
+            pin_sp = session_pw3;
+        }
+        else if (pin->fid == EF_PIV_PIN) {
+            has_pwpiv = true;
+            pin_sp = session_pwpiv;
+        }
+        if (pin_sp) {
+            hash_multi(data, len, pin_sp);
+            r = load_dek();
+            if (r != PICOKEY_OK) {
+                return SW_EXEC_ERROR();
+            }
+            uint8_t old_data[DEK_FILE_SIZE_OLD], ef_data[DEK_FILE_SIZE];
+            file_t *ef_dek_pw = NULL;
+            if (has_pw1 || has_pw2) {
+                ef_dek_pw = search_by_fid(EF_DEK_PW1, NULL, SPECIFY_EF);
+            }
+            else if (has_pw3) {
+                ef_dek_pw = search_by_fid(EF_DEK_PW3, NULL, SPECIFY_EF);
+            }
+            else if (has_pwpiv) {
+                ef_dek_pw = search_by_fid(EF_DEK_PWPIV, NULL, SPECIFY_EF);
+            }
+            if (!ef_dek_pw) {
+                return PICOKEY_ERR_FILE_NOT_FOUND;
+            }
+            ef_data[0] = 0x3; // Format
+            pin_derive_session(data, len, pin_sp);
+            encrypt_with_aad(pin_sp, dek, DEK_SIZE, PIN_KDF_DEFAULT_VERSION, ef_data + 1);
+            file_put_data(ef_dek_pw, ef_data, sizeof(ef_data));
+
+            file_t *ef_dek = search_by_fid(EF_DEK, NULL, SPECIFY_EF);
+            if (!ef_dek) {
+                return PICOKEY_ERR_FILE_NOT_FOUND;
+            }
+            memcpy(old_data, file_get_data(ef_dek), sizeof(old_data));
+            if (has_pw1 || has_pw2) {
+                memset(old_data + IV_SIZE, 0, 32);
+            }
+            else if (has_pw3) {
+                memset(old_data + IV_SIZE + 32 + 32, 0, 32);
+            }
+            else if (has_pwpiv) {
+                memset(old_data + IV_SIZE + 32 + 32 + 32, 0, 32);
+            }
+            file_put_data(ef_dek, old_data, sizeof(old_data));
+            low_flash_available();
+        }
+        has_pw1 = has_pw2 = has_pw3 = false;
+    }
     isUserAuthenticated = true;
     if (pin->fid == EF_PW1) {
         if (P2(apdu) == 0x81) {
@@ -426,11 +584,11 @@ int check_pin(const file_t *pin, const uint8_t *data, size_t len) {
         else {
             has_pw2 = true;
         }
-        hash_multi(data, len, session_pw1);
+        pin_derive_session(data, len, session_pw1);
     }
     else if (pin->fid == EF_PW3) {
         has_pw3 = true;
-        hash_multi(data, len, session_pw3);
+        pin_derive_session(data, len, session_pw3);
     }
     return SW_OK();
 }
@@ -658,12 +816,7 @@ void make_rsa_response(mbedtls_rsa_context *rsa) {
 void make_ecdsa_response(mbedtls_ecp_keypair *ecdsa) {
     uint8_t pt[MBEDTLS_ECP_MAX_PT_LEN];
     size_t plen = 0;
-    mbedtls_ecp_point_write_binary(&ecdsa->grp,
-                                   &ecdsa->Q,
-                                   MBEDTLS_ECP_PF_UNCOMPRESSED,
-                                   &plen,
-                                   pt,
-                                   sizeof(pt));
+    mbedtls_ecp_point_write_binary(&ecdsa->grp, &ecdsa->Q, MBEDTLS_ECP_PF_UNCOMPRESSED, &plen, pt, sizeof(pt));
     res_APDU[res_APDU_size++] = 0x7f;
     res_APDU[res_APDU_size++] = 0x49;
     if (plen >= 128) {
@@ -679,18 +832,13 @@ void make_ecdsa_response(mbedtls_ecp_keypair *ecdsa) {
     res_APDU_size += plen;
 }
 
-int rsa_sign(mbedtls_rsa_context *ctx,
-             const uint8_t *data,
-             size_t data_len,
-             uint8_t *out,
-             size_t *out_len) {
+int rsa_sign(mbedtls_rsa_context *ctx, const uint8_t *data, size_t data_len, uint8_t *out, size_t *out_len) {
     uint8_t *d = (uint8_t *) data, *end = d + data_len, *hsh = NULL;
     size_t seq_len = 0, hash_len = 0;
     size_t key_size = ctx->len;
     int r = 0;
     mbedtls_md_type_t md = MBEDTLS_MD_NONE;
-    if (mbedtls_asn1_get_tag(&d, end, &seq_len,
-                             MBEDTLS_ASN1_CONSTRUCTED | MBEDTLS_ASN1_SEQUENCE) == 0) {
+    if (mbedtls_asn1_get_tag(&d, end, &seq_len, MBEDTLS_ASN1_CONSTRUCTED | MBEDTLS_ASN1_SEQUENCE) == 0) {
         mbedtls_asn1_buf mdb;
         r = mbedtls_asn1_get_alg_null(&d, end, &mdb);
         if (r == 0) {
@@ -749,11 +897,7 @@ int rsa_sign(mbedtls_rsa_context *ctx,
     return r;
 }
 
-int ecdsa_sign(mbedtls_ecp_keypair *ctx,
-               const uint8_t *data,
-               size_t data_len,
-               uint8_t *out,
-               size_t *out_len) {
+int ecdsa_sign(mbedtls_ecp_keypair *ctx, const uint8_t *data, size_t data_len, uint8_t *out, size_t *out_len) {
 
     int r = 0;
 #ifdef MBEDTLS_EDDSA_C

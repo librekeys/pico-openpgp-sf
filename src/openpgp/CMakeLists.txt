@@ -3,4 +3,7 @@ idf_component_register(
     INCLUDE_DIRS .
     REQUIRES mbedtls efuse pico-keys-sdk
 )
+if(OPENPGP_TEST_INIT_LEGACY_PIN)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE OPENPGP_TEST_INIT_LEGACY_PIN=1)
+endif()
 idf_component_set_property(${COMPONENT_NAME} WHOLE_ARCHIVE ON)
