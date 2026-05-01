@@ -175,15 +175,7 @@ int cmd_import_data(void) {
             mbedtls_ecp_keypair_free(&ecdsa);
             return SW_EXEC_ERROR();
         }
-#ifdef MBEDTLS_EDDSA_C
-        if (ecdsa.grp.id == MBEDTLS_ECP_DP_ED25519) {
-            r = mbedtls_ecp_point_edwards(&ecdsa.grp, &ecdsa.Q, &ecdsa.d, random_fill_iterator, NULL);
-        }
-        else
-#endif
-        {
-            r = mbedtls_ecp_mul(&ecdsa.grp, &ecdsa.Q, &ecdsa.d, &ecdsa.grp.G, random_fill_iterator, NULL);
-        }
+        r = mbedtls_ecp_keypair_calc_public(&ecdsa, random_fill_iterator, NULL);
         if (r != 0) {
             mbedtls_ecp_keypair_free(&ecdsa);
             return SW_EXEC_ERROR();

@@ -1335,7 +1335,7 @@ static int cmd_import_asym(void) {
             mbedtls_ecdsa_free(&ecdsa);
             return SW_EXEC_ERROR();
         }
-        r = mbedtls_ecp_mul(&ecdsa.grp, &ecdsa.Q, &ecdsa.d, &ecdsa.grp.G, random_fill_iterator, NULL);
+        r = mbedtls_ecp_keypair_calc_public(&ecdsa, random_fill_iterator, NULL);
         if (r != 0) {
             mbedtls_ecdsa_free(&ecdsa);
             return SW_EXEC_ERROR();
