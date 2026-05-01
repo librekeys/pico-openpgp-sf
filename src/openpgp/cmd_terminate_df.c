@@ -22,7 +22,7 @@ int cmd_terminate_df(void) {
         return SW_INCORRECT_P1P2();
     }
     file_t *retries;
-    if (!(retries = search_by_fid(EF_PW_PRIV, NULL, SPECIFY_EF))) {
+    if (!(retries = file_search_by_fid(EF_PW_PRIV, NULL, SPECIFY_EF))) {
         return SW_REFERENCE_NOT_FOUND();
     }
     if (!has_pw3 && *(file_get_data(retries) + 6) > 0) {
@@ -31,7 +31,7 @@ int cmd_terminate_df(void) {
     if (apdu.nc != 0) {
         return SW_WRONG_LENGTH();
     }
-    initialize_flash(true);
+    file_initialize_flash(true);
     scan_files_openpgp();
     return SW_OK();
 }

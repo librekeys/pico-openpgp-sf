@@ -15,6 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <stdio.h>
 #include "openpgp.h"
 #include "do.h"
 #include "random.h"
@@ -31,7 +32,7 @@ int cmd_keypair_gen(void) {
     }
 
     uint16_t fid = 0x0;
-    int r = PICOKEY_OK;
+    int r = PICOKEYS_OK;
     if (apdu.data[0] == 0xB6) {
         fid = EF_PK_SIG;
     }
@@ -45,7 +46,7 @@ int cmd_keypair_gen(void) {
         return SW_WRONG_DATA();
     }
 
-    file_t *algo_ef = search_by_fid(fid - 0x0010, NULL, SPECIFY_EF);
+    file_t *algo_ef = file_search_by_fid(fid - 0x0010, NULL, SPECIFY_EF);
     if (!algo_ef) {
         return SW_REFERENCE_NOT_FOUND();
     }
@@ -63,8 +64,7 @@ int cmd_keypair_gen(void) {
             //    return SW_FUNC_NOT_SUPPORTED();
             mbedtls_rsa_context rsa;
             mbedtls_rsa_init(&rsa);
-            uint8_t index = 0;
-            r = mbedtls_rsa_gen_key(&rsa, random_gen, &index, nlen, exponent);
+            r = mbedtls_rsa_gen_key(&rsa, random_fill_iterator, NULL, nlen, exponent);
             if (r != 0) {
                 mbedtls_rsa_free(&rsa);
                 return SW_EXEC_ERROR();
@@ -72,7 +72,7 @@ int cmd_keypair_gen(void) {
             r = store_keys(&rsa, ALGO_RSA, fid, true);
             make_rsa_response(&rsa);
             mbedtls_rsa_free(&rsa);
-            if (r != PICOKEY_OK) {
+            if (r != PICOKEYS_OK) {
                 return SW_EXEC_ERROR();
             }
         }
@@ -84,8 +84,7 @@ int cmd_keypair_gen(void) {
             }
             mbedtls_ecp_keypair ecdsa;
             mbedtls_ecp_keypair_init(&ecdsa);
-            uint8_t index = 0;
-            r = mbedtls_ecdsa_genkey(&ecdsa, gid, random_gen, &index);
+            r = mbedtls_ecdsa_genkey(&ecdsa, gid, random_fill_iterator, NULL);
             if (r != 0) {
                 mbedtls_ecp_keypair_free(&ecdsa);
                 return SW_EXEC_ERROR();
@@ -93,19 +92,19 @@ int cmd_keypair_gen(void) {
             r = store_keys(&ecdsa, algo[0], fid, true);
             make_ecdsa_response(&ecdsa);
             mbedtls_ecp_keypair_free(&ecdsa);
-            if (r != PICOKEY_OK) {
+            if (r != PICOKEYS_OK) {
                 return SW_EXEC_ERROR();
             }
         }
         else {
             return SW_FUNC_NOT_SUPPORTED();
         }
-        file_t *pbef = search_by_fid(fid + 3, NULL, SPECIFY_EF);
+        file_t *pbef = file_search_by_fid(fid + 3, NULL, SPECIFY_EF);
         if (!pbef) {
             return SW_REFERENCE_NOT_FOUND();
         }
         r = file_put_data(pbef, res_APDU, res_APDU_size);
-        if (r != PICOKEY_OK) {
+        if (r != PICOKEYS_OK) {
             return SW_EXEC_ERROR();
         }
         if (fid == EF_PK_SIG) {
@@ -119,14 +118,14 @@ int cmd_keypair_gen(void) {
             memcpy(aes_key, random_bytes_get(key_size), key_size);
             r = store_keys(aes_key, ALGO_AES_256, EF_AES_KEY, true);
             /* if storing the key fails, we silently continue */
-            //if (r != PICOKEY_OK)
+            //if (r != PICOKEYS_OK)
             //    return SW_EXEC_ERROR();
         }
-        low_flash_available();
+        flash_commit();
         return SW_OK();
     }
     else if (P1(apdu) == 0x81) { //read
-        file_t *ef = search_by_fid(fid + 3, NULL, SPECIFY_EF);
+        file_t *ef = file_search_by_fid(fid + 3, NULL, SPECIFY_EF);
         if (!file_has_data(ef)) {
             return SW_REFERENCE_NOT_FOUND();
         }

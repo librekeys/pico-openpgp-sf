@@ -26,12 +26,12 @@ int cmd_reset_retry(void) {
         int newpin_len = 0;
         file_t *pw = NULL;
         has_pw1 = false;
-        if (!(pw = search_by_fid(EF_PW1, NULL, SPECIFY_EF))) {
+        if (!(pw = file_search_by_fid(EF_PW1, NULL, SPECIFY_EF))) {
             return SW_REFERENCE_NOT_FOUND();
         }
         if (P1(apdu) == 0x0) {
             file_t *rc;
-            if (!(rc = search_by_fid(EF_RC, NULL, SPECIFY_EF))) {
+            if (!(rc = file_search_by_fid(EF_RC, NULL, SPECIFY_EF))) {
                 return SW_REFERENCE_NOT_FOUND();
             }
             uint8_t pin_len = file_get_data(rc)[0];
@@ -55,10 +55,10 @@ int cmd_reset_retry(void) {
             newpin_len = apdu.nc;
         }
         int r = 0;
-        if ((r = load_dek()) != PICOKEY_OK) {
+        if ((r = load_dek()) != PICOKEYS_OK) {
             return SW_EXEC_ERROR();
         }
-        file_t *tf = search_by_fid(EF_DEK_PW1, NULL, SPECIFY_EF);
+        file_t *tf = file_search_by_fid(EF_DEK_PW1, NULL, SPECIFY_EF);
         if (!tf) {
             return SW_REFERENCE_NOT_FOUND();
         }
@@ -73,11 +73,11 @@ int cmd_reset_retry(void) {
         dhash[1] = 0x1; // Format
         pin_derive_verifier(apdu.data + (apdu.nc - newpin_len), newpin_len, dhash + 2);
         file_put_data(pw, dhash, sizeof(dhash));
-        if (pin_reset_retries(pw, true) != PICOKEY_OK) {
+        if (pin_reset_retries(pw, true) != PICOKEYS_OK) {
             return SW_MEMORY_FAILURE();
         }
-        low_flash_available();
-        if ((r = load_dek()) != PICOKEY_OK) {
+        flash_commit();
+        if ((r = load_dek()) != PICOKEYS_OK) {
             return SW_EXEC_ERROR();
         }
         return SW_OK();

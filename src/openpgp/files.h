@@ -172,4 +172,6 @@
 #define EF_PRIV_DO_3        0x0103
 #define EF_PRIV_DO_4        0x0104
 
+extern const file_t *file_openpgp;
+
 #endif

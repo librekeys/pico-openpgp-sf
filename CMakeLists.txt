@@ -48,10 +48,10 @@ endif()
 
 set(USB_ITF_CCID 1)
 set(USB_ITF_WCID 1)
-include(pico-keys-sdk/pico_keys_sdk_import.cmake)
+include(pico-keys-sdk/picokeys_sdk_import.cmake)
 
 if(NOT ESP_PLATFORM)
-    set(SOURCES ${PICO_KEYS_SOURCES})
+    set(SOURCES ${PICOKEYS_SOURCES})
 endif()
 set(SOURCES ${SOURCES}
         ${CMAKE_CURRENT_LIST_DIR}/src/openpgp/openpgp.c
@@ -99,7 +99,7 @@ if(NOT ESP_PLATFORM)
     )
     target_compile_options(pico_openpgp PRIVATE ${COMMON_COMPILE_OPTIONS})
 
-    pico_keys_apply_strict_flags(
+    picokeys_apply_strict_flags(
         SOURCES ${SOURCES}
         FILTER_REGEX "/src/openpgp/|/pico-keys-sdk/src/|/pico-keys-sdk/config/"
     )
@@ -135,7 +135,7 @@ if(NOT ESP_PLATFORM)
                 -Wl,--gc-sections
             )
         endif(APPLE)
-        target_link_libraries(pico_openpgp PRIVATE pico_keys_sdk mbedtls pthread m)
+        target_link_libraries(pico_openpgp PRIVATE picokeys_sdk mbedtls pthread m)
     else()
         pico_add_extra_outputs(${CMAKE_PROJECT_NAME})
     endif()

@@ -45,7 +45,7 @@ int cmd_pso(void) {
     else {
         return SW_INCORRECT_P1P2();
     }
-    file_t *algo_ef = search_by_fid(algo_fid, NULL, SPECIFY_EF);
+    file_t *algo_ef = file_search_by_fid(algo_fid, NULL, SPECIFY_EF);
     if (!algo_ef) {
         return SW_REFERENCE_NOT_FOUND();
     }
@@ -60,35 +60,35 @@ int cmd_pso(void) {
             is_aes = true;
         }
     }
-    file_t *ef = search_by_fid(pk_fid, NULL, SPECIFY_EF);
+    file_t *ef = file_search_by_fid(pk_fid, NULL, SPECIFY_EF);
     if (!ef) {
         return SW_REFERENCE_NOT_FOUND();
     }
     if (wait_button_pressed_fid(pk_fid == EF_PK_SIG ? EF_UIF_SIG : EF_UIF_DEC) == true) {
         return SW_SECURE_MESSAGE_EXEC_ERROR();
     }
-    int r = PICOKEY_OK;
+    int r = PICOKEYS_OK;
     size_t key_size = file_get_size(ef);
     if (is_aes) {
         uint8_t aes_key[32];
         r = load_aes_key(aes_key, ef);
-        if (r != PICOKEY_OK) {
+        if (r != PICOKEYS_OK) {
             memset(aes_key, 0, sizeof(aes_key));
             return SW_EXEC_ERROR();
         }
         if (P1(apdu) == 0x80 && P2(apdu) == 0x86) { //decipher
-            r = aes_decrypt(aes_key, NULL, key_size, PICO_KEYS_AES_MODE_CBC, apdu.data + 1, apdu.nc - 1);
+            r = aes_decrypt(aes_key, NULL, key_size, PICOKEYS_AES_MODE_CBC, apdu.data + 1, apdu.nc - 1);
             memset(aes_key, 0, sizeof(aes_key));
-            if (r != PICOKEY_OK) {
+            if (r != PICOKEYS_OK) {
                 return SW_EXEC_ERROR();
             }
             memcpy(res_APDU, apdu.data + 1, apdu.nc - 1);
             res_APDU_size = apdu.nc - 1;
         }
         else if (P1(apdu) == 0x86 && P2(apdu) == 0x80) { //encipher
-            r = aes_encrypt(aes_key, NULL, key_size, PICO_KEYS_AES_MODE_CBC, apdu.data, apdu.nc);
+            r = aes_encrypt(aes_key, NULL, key_size, PICOKEYS_AES_MODE_CBC, apdu.data, apdu.nc);
             memset(aes_key, 0, sizeof(aes_key));
-            if (r != PICOKEY_OK) {
+            if (r != PICOKEYS_OK) {
                 return SW_EXEC_ERROR();
             }
             res_APDU[0] = 0x2;
@@ -101,7 +101,7 @@ int cmd_pso(void) {
         mbedtls_rsa_context ctx;
         mbedtls_rsa_init(&ctx);
         r = load_private_key_rsa(&ctx, ef, true);
-        if (r != PICOKEY_OK) {
+        if (r != PICOKEYS_OK) {
             mbedtls_rsa_free(&ctx);
             return SW_EXEC_ERROR();
         }
@@ -121,13 +121,7 @@ int cmd_pso(void) {
                 memset(apdu.data + apdu.nc, 0, key_size - apdu.nc);
             }
             size_t olen = 0;
-            r = mbedtls_rsa_pkcs1_decrypt(&ctx,
-                                          random_gen,
-                                          NULL,
-                                          &olen,
-                                          apdu.data + 1,
-                                          res_APDU,
-                                          key_size);
+            r = mbedtls_rsa_pkcs1_decrypt(&ctx, random_fill_iterator, NULL, &olen, apdu.data + 1, res_APDU, key_size);
             mbedtls_rsa_free(&ctx);
             if (r != 0) {
                 return SW_EXEC_ERROR();
@@ -140,7 +134,7 @@ int cmd_pso(void) {
             mbedtls_ecp_keypair ctx;
             mbedtls_ecp_keypair_init(&ctx);
             r = load_private_key_ecdsa(&ctx, ef, true);
-            if (r != PICOKEY_OK) {
+            if (r != PICOKEYS_OK) {
                 mbedtls_ecp_keypair_free(&ctx);
                 return SW_EXEC_ERROR();
             }
@@ -193,12 +187,7 @@ int cmd_pso(void) {
                 return SW_DATA_INVALID();
             }
             size_t olen = 0;
-            r = mbedtls_ecdh_calc_secret(&ctx,
-                                         &olen,
-                                         res_APDU,
-                                         MBEDTLS_ECP_MAX_BYTES,
-                                         random_gen,
-                                         NULL);
+            r = mbedtls_ecdh_calc_secret(&ctx, &olen, res_APDU, MBEDTLS_ECP_MAX_BYTES, random_fill_iterator, NULL);
             if (r != 0) {
                 mbedtls_ecdh_free(&ctx);
                 return SW_EXEC_ERROR();

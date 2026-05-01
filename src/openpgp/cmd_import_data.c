@@ -65,10 +65,10 @@ int cmd_import_data(void) {
         return SW_WRONG_DATA();
     }
     start++;
-    if (!(ef = search_by_fid(fid, NULL, SPECIFY_EF))) {
+    if (!(ef = file_search_by_fid(fid, NULL, SPECIFY_EF))) {
         return SW_REFERENCE_NOT_FOUND();
     }
-    if (!authenticate_action(ef, ACL_OP_UPDATE_ERASE)) {
+    if (!file_authenticate_action(ef, ACL_OP_UPDATE_ERASE)) {
         return SW_SECURITY_STATUS_NOT_SATISFIED();
     }
     start += (*start + 1);
@@ -99,7 +99,7 @@ int cmd_import_data(void) {
         }
     }
 
-    file_t *algo_ef = search_by_fid(fid - 0x0010, NULL, SPECIFY_EF);
+    file_t *algo_ef = file_search_by_fid(fid - 0x0010, NULL, SPECIFY_EF);
     if (!algo_ef) {
         return SW_REFERENCE_NOT_FOUND();
     }
@@ -150,7 +150,7 @@ int cmd_import_data(void) {
         r = store_keys(&rsa, ALGO_RSA, fid, true);
         make_rsa_response(&rsa);
         mbedtls_rsa_free(&rsa);
-        if (r != PICOKEY_OK) {
+        if (r != PICOKEYS_OK) {
             return SW_EXEC_ERROR();
         }
     }
@@ -177,12 +177,12 @@ int cmd_import_data(void) {
         }
 #ifdef MBEDTLS_EDDSA_C
         if (ecdsa.grp.id == MBEDTLS_ECP_DP_ED25519) {
-            r = mbedtls_ecp_point_edwards(&ecdsa.grp, &ecdsa.Q, &ecdsa.d, random_gen, NULL);
+            r = mbedtls_ecp_point_edwards(&ecdsa.grp, &ecdsa.Q, &ecdsa.d, random_fill_iterator, NULL);
         }
         else
 #endif
         {
-            r = mbedtls_ecp_mul(&ecdsa.grp, &ecdsa.Q, &ecdsa.d, &ecdsa.grp.G, random_gen, NULL);
+            r = mbedtls_ecp_mul(&ecdsa.grp, &ecdsa.Q, &ecdsa.d, &ecdsa.grp.G, random_fill_iterator, NULL);
         }
         if (r != 0) {
             mbedtls_ecp_keypair_free(&ecdsa);
@@ -191,7 +191,7 @@ int cmd_import_data(void) {
         r = store_keys(&ecdsa, ALGO_ECDSA, fid, true);
         make_ecdsa_response(&ecdsa);
         mbedtls_ecp_keypair_free(&ecdsa);
-        if (r != PICOKEY_OK) {
+        if (r != PICOKEYS_OK) {
             return SW_EXEC_ERROR();
         }
     }
@@ -201,12 +201,12 @@ int cmd_import_data(void) {
     if (fid == EF_PK_SIG) {
         reset_sig_count();
     }
-    file_t *pbef = search_by_fid(fid + 3, NULL, SPECIFY_EF);
+    file_t *pbef = file_search_by_fid(fid + 3, NULL, SPECIFY_EF);
     if (!pbef) {
         return SW_REFERENCE_NOT_FOUND();
     }
     r = file_put_data(pbef, res_APDU, res_APDU_size);
-    if (r != PICOKEY_OK) {
+    if (r != PICOKEYS_OK) {
         return SW_EXEC_ERROR();
     }
     res_APDU_size = 0; //make_*_response sets a response. we need to overwrite

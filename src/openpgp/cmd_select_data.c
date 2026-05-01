@@ -38,15 +38,15 @@ int cmd_select_data(void) {
     else {
         fid = apdu.data[4];
     }
-    if (!(ef = search_by_fid(fid, NULL, SPECIFY_EF))) {
+    if (!(ef = file_search_by_fid(fid, NULL, SPECIFY_EF))) {
         return SW_REFERENCE_NOT_FOUND();
     }
-    if (!authenticate_action(ef, ACL_OP_UPDATE_ERASE)) {
+    if (!file_authenticate_action(ef, ACL_OP_UPDATE_ERASE)) {
         return SW_SECURITY_STATUS_NOT_SATISFIED();
     }
     fid &= ~0x6000; //Now get private DO
     fid += P1(apdu);
-    if (!(ef = search_by_fid(fid, NULL, SPECIFY_EF))) {
+    if (!(ef = file_search_by_fid(fid, NULL, SPECIFY_EF))) {
         return SW_REFERENCE_NOT_FOUND();
     }
     select_file(ef);

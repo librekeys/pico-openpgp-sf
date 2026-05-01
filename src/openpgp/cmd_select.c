@@ -24,7 +24,7 @@ int cmd_select(void) {
     uint16_t fid = 0x0;
 
     if (apdu.nc >= 2) {
-        fid = get_uint16_t_be(apdu.data);
+        fid = get_uint16_be(apdu.data);
     }
 
     if (!pe) {
@@ -34,18 +34,18 @@ int cmd_select(void) {
                 //ac_fini();
             }
             else if (apdu.nc == 2) {
-                if (!(pe = search_by_fid(fid, NULL, SPECIFY_ANY))) {
+                if (!(pe = file_search_by_fid(fid, NULL, SPECIFY_ANY))) {
                     return SW_REFERENCE_NOT_FOUND();
                 }
             }
         }
         else if (p1 == 0x01) { //Select child DF - DF identifier
-            if (!(pe = search_by_fid(fid, currentDF, SPECIFY_DF))) {
+            if (!(pe = file_search_by_fid(fid, currentDF, SPECIFY_DF))) {
                 return SW_REFERENCE_NOT_FOUND();
             }
         }
         else if (p1 == 0x02) { //Select EF under the current DF - EF identifier
-            if (!(pe = search_by_fid(fid, currentDF, SPECIFY_EF))) {
+            if (!(pe = file_search_by_fid(fid, currentDF, SPECIFY_EF))) {
                 return SW_REFERENCE_NOT_FOUND();
             }
         }
@@ -55,7 +55,7 @@ int cmd_select(void) {
             }
         }
         else if (p1 == 0x04) { //Select by DF name - e.g., [truncated] application identifier
-            if (!(pe = search_by_name(apdu.data, apdu.nc))) {
+            if (!(pe = file_search_by_name(apdu.data, apdu.nc))) {
                 return SW_REFERENCE_NOT_FOUND();
             }
             if (card_terminated) {
@@ -63,19 +63,19 @@ int cmd_select(void) {
             }
         }
         else if (p1 == 0x08) { //Select from the MF - Path without the MF identifier
-            if (!(pe = search_by_path(apdu.data, apdu.nc, MF))) {
+            if (!(pe = file_search_by_path(apdu.data, apdu.nc, MF))) {
                 return SW_REFERENCE_NOT_FOUND();
             }
         }
         else if (p1 == 0x09) { //Select from the current DF - Path without the current DF identifier
-            if (!(pe = search_by_path(apdu.data, apdu.nc, currentDF))) {
+            if (!(pe = file_search_by_path(apdu.data, apdu.nc, currentDF))) {
                 return SW_REFERENCE_NOT_FOUND();
             }
         }
     }
     if ((p2 & 0xfc) == 0x00 || (p2 & 0xfc) == 0x04) {
         if ((p2 & 0xfc) == 0x04) {
-            process_fci(pe, 0);
+            file_process_fci(pe, 0);
         }
     }
     else {

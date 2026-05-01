@@ -23,7 +23,7 @@
 #include <pico/stdlib.h>
 #endif
 
-#include "pico_keys.h"
+#include "picokeys.h"
 #include "apdu.h"
 #include "mbedtls/rsa.h"
 #include "mbedtls/ecdsa.h"

@@ -36,7 +36,7 @@ int parse_do(uint16_t *fids, int mode) {
     int len = 0;
     file_t *ef;
     for (int i = 0; i < fids[0]; i++) {
-        if ((ef = search_by_fid(fids[i + 1], NULL, SPECIFY_EF))) {
+        if ((ef = file_search_by_fid(fids[i + 1], NULL, SPECIFY_EF))) {
             uint16_t data_len;
             if ((ef->type & FILE_DATA_FUNC) == FILE_DATA_FUNC) {
                 int (*file_data_func)(const file_t *, int) = NULL;
@@ -71,7 +71,7 @@ int parse_do(uint16_t *fids, int mode) {
 int parse_trium(uint16_t fid, uint8_t num, size_t size) {
     for (uint8_t i = 0; i < num; i++) {
         file_t *ef;
-        if ((ef = search_by_fid(fid + i, NULL, SPECIFY_EF)) && ef->data) {
+        if ((ef = file_search_by_fid(fid + i, NULL, SPECIFY_EF)) && ef->data) {
             uint16_t data_len = file_get_size(ef);
             memcpy(res_APDU + res_APDU_size, file_get_data(ef), data_len);
             res_APDU_size += data_len;
@@ -106,7 +106,7 @@ int parse_sec_tpl(const file_t *f, int mode) {
     (void) mode;
     res_APDU[res_APDU_size++] = EF_SEC_TPL & 0xff;
     res_APDU[res_APDU_size++] = 5;
-    file_t *ef = search_by_fid(EF_SIG_COUNT, NULL, SPECIFY_ANY);
+    file_t *ef = file_search_by_fid(EF_SIG_COUNT, NULL, SPECIFY_ANY);
     if (ef && ef->data) {
         res_APDU[res_APDU_size++] = EF_SIG_COUNT & 0xff;
         res_APDU[res_APDU_size++] = 3;
@@ -154,7 +154,7 @@ int parse_keyinfo(const file_t *f, int mode) {
         res_APDU[res_APDU_size++] = EF_KEY_INFO & 0xff;
         res_APDU[res_APDU_size++] = 6;
     }
-    file_t *ef = search_by_fid(EF_PK_SIG, NULL, SPECIFY_ANY);
+    file_t *ef = file_search_by_fid(EF_PK_SIG, NULL, SPECIFY_ANY);
     res_APDU[res_APDU_size++] = 0x00;
     if (ef && ef->data) {
         res_APDU[res_APDU_size++] = 0x01;
@@ -163,7 +163,7 @@ int parse_keyinfo(const file_t *f, int mode) {
         res_APDU[res_APDU_size++] = 0x00;
     }
 
-    ef = search_by_fid(EF_PK_DEC, NULL, SPECIFY_ANY);
+    ef = file_search_by_fid(EF_PK_DEC, NULL, SPECIFY_ANY);
     res_APDU[res_APDU_size++] = 0x01;
     if (ef && ef->data) {
         res_APDU[res_APDU_size++] = 0x01;
@@ -172,7 +172,7 @@ int parse_keyinfo(const file_t *f, int mode) {
         res_APDU[res_APDU_size++] = 0x00;
     }
 
-    ef = search_by_fid(EF_PK_AUT, NULL, SPECIFY_ANY);
+    ef = file_search_by_fid(EF_PK_AUT, NULL, SPECIFY_ANY);
     res_APDU[res_APDU_size++] = 0x02;
     if (ef && ef->data) {
         res_APDU[res_APDU_size++] = 0x01;
@@ -192,7 +192,7 @@ int parse_pw_status(const file_t *f, int mode) {
         res_APDU[res_APDU_size++] = EF_PW_STATUS & 0xff;
         res_APDU[res_APDU_size++] = 7;
     }
-    ef = search_by_fid(EF_PW_PRIV, NULL, SPECIFY_ANY);
+    ef = file_search_by_fid(EF_PW_PRIV, NULL, SPECIFY_ANY);
     if (ef && ef->data) {
         memcpy(res_APDU + res_APDU_size, file_get_data(ef), 7);
         res_APDU_size += 7;
@@ -369,7 +369,7 @@ int parse_algoinfo(const file_t *f, int mode) {
     else if (f->fid == EF_ALGO_SIG || f->fid == EF_ALGO_DEC || f->fid == EF_ALGO_AUT) {
         uint16_t fid = 0x1000 | f->fid;
         file_t *ef;
-        if (!(ef = search_by_fid(fid, NULL, SPECIFY_EF)) || !ef->data) {
+        if (!(ef = file_search_by_fid(fid, NULL, SPECIFY_EF)) || !ef->data) {
             datalen += parse_algo(algorithm_attr_rsa2k, f->fid);
         }
         else {

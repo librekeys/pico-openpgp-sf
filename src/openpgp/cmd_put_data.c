@@ -26,10 +26,10 @@ int cmd_put_data(void) {
     else if (fid == EF_ALGO_SIG || fid == EF_ALGO_DEC || fid == EF_ALGO_AUT) {
         fid |= 0x1000;
     }
-    if (!(ef = search_by_fid(fid, NULL, SPECIFY_EF))) {
+    if (!(ef = file_search_by_fid(fid, NULL, SPECIFY_EF))) {
         return SW_REFERENCE_NOT_FOUND();
     }
-    if (!authenticate_action(ef, ACL_OP_UPDATE_ERASE)) {
+    if (!file_authenticate_action(ef, ACL_OP_UPDATE_ERASE)) {
         return SW_SECURITY_STATUS_NOT_SATISFIED();
     }
     if ((fid == EF_PRIV_DO_1 || fid == EF_PRIV_DO_3) && (!has_pw2 && !has_pw3)) {
@@ -50,7 +50,7 @@ int cmd_put_data(void) {
         if (apdu.nc > 0) {
             if (fid == EF_RC) {
                 has_rc = false;
-                if ((r = load_dek()) != PICOKEY_OK) {
+                if ((r = load_dek()) != PICOKEYS_OK) {
                     return SW_EXEC_ERROR();
                 }
                 uint8_t dhash[34];
@@ -59,7 +59,7 @@ int cmd_put_data(void) {
                 pin_derive_verifier(apdu.data, apdu.nc, dhash + 2);
                 file_put_data(ef, dhash, sizeof(dhash));
 
-                file_t *tf = search_by_fid(EF_DEK, NULL, SPECIFY_EF);
+                file_t *tf = file_search_by_fid(EF_DEK, NULL, SPECIFY_EF);
                 if (!tf) {
                     return SW_REFERENCE_NOT_FOUND();
                 }
@@ -73,13 +73,13 @@ int cmd_put_data(void) {
             else {
                 r = file_put_data(ef, apdu.data, apdu.nc);
             }
-            if (r != PICOKEY_OK) {
+            if (r != PICOKEYS_OK) {
                 return SW_MEMORY_FAILURE();
             }
-            low_flash_available();
+            flash_commit();
         }
         else {
-            delete_file(ef);
+            file_delete(ef);
         }
     }
     return SW_OK();

@@ -44,10 +44,10 @@ int cmd_verify(void) {
         fid = EF_PW1;
     }
     file_t *pw, *pw_status;
-    if (!(pw = search_by_fid(fid, NULL, SPECIFY_EF))) {
+    if (!(pw = file_search_by_fid(fid, NULL, SPECIFY_EF))) {
         return SW_REFERENCE_NOT_FOUND();
     }
-    if (!(pw_status = search_by_fid(EF_PW_PRIV, NULL, SPECIFY_EF))) {
+    if (!(pw_status = file_search_by_fid(EF_PW_PRIV, NULL, SPECIFY_EF))) {
         return SW_REFERENCE_NOT_FOUND();
     }
     if (file_get_data(pw)[0] == 0) { //not initialized

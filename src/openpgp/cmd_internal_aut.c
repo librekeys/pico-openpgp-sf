@@ -25,7 +25,7 @@ int cmd_internal_aut(void) {
     if (!has_pw3 && !has_pw2) {
         return SW_SECURITY_STATUS_NOT_SATISFIED();
     }
-    file_t *algo_ef = search_by_fid(algo_aut, NULL, SPECIFY_EF);
+    file_t *algo_ef = file_search_by_fid(algo_aut, NULL, SPECIFY_EF);
     if (!algo_ef) {
         return SW_REFERENCE_NOT_FOUND();
     }
@@ -33,19 +33,19 @@ int cmd_internal_aut(void) {
     if (algo_ef && algo_ef->data) {
         algo = file_get_data(algo_ef);
     }
-    file_t *ef = search_by_fid(pk_aut, NULL, SPECIFY_EF);
+    file_t *ef = file_search_by_fid(pk_aut, NULL, SPECIFY_EF);
     if (!ef) {
         return SW_REFERENCE_NOT_FOUND();
     }
     if (wait_button_pressed_fid(EF_UIF_AUT) == true) {
         return SW_SECURE_MESSAGE_EXEC_ERROR();
     }
-    int r = PICOKEY_OK;
+    int r = PICOKEYS_OK;
     if (algo[0] == ALGO_RSA) {
         mbedtls_rsa_context ctx;
         mbedtls_rsa_init(&ctx);
         r = load_private_key_rsa(&ctx, ef, true);
-        if (r != PICOKEY_OK) {
+        if (r != PICOKEYS_OK) {
             mbedtls_rsa_free(&ctx);
             return SW_EXEC_ERROR();
         }
@@ -61,7 +61,7 @@ int cmd_internal_aut(void) {
         mbedtls_ecp_keypair ctx;
         mbedtls_ecp_keypair_init(&ctx);
         r = load_private_key_ecdsa(&ctx, ef, true);
-        if (r != PICOKEY_OK) {
+        if (r != PICOKEYS_OK) {
             mbedtls_ecp_keypair_free(&ctx);
             return SW_EXEC_ERROR();
         }

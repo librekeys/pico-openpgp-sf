@@ -24,7 +24,7 @@ int cmd_change_pin(void) {
     }
     uint16_t fid = 0x1000 | P2(apdu);
     file_t *pw;
-    if (!(pw = search_by_fid(fid, NULL, SPECIFY_EF))) {
+    if (!(pw = file_search_by_fid(fid, NULL, SPECIFY_EF))) {
         return SW_REFERENCE_NOT_FOUND();
     }
     uint8_t pin_len = file_get_data(pw)[0];
@@ -33,7 +33,7 @@ int cmd_change_pin(void) {
     if (r != 0x9000) {
         return r;
     }
-    if ((r = load_dek()) != PICOKEY_OK) {
+    if ((r = load_dek()) != PICOKEYS_OK) {
         return SW_EXEC_ERROR();
     }
 
@@ -44,7 +44,7 @@ int cmd_change_pin(void) {
     file_put_data(pw, dhash, sizeof(dhash));
 
     if (P2(apdu) == 0x81) {
-        file_t *tf = search_by_fid(EF_DEK_PW1, NULL, SPECIFY_EF);
+        file_t *tf = file_search_by_fid(EF_DEK_PW1, NULL, SPECIFY_EF);
         if (!tf) {
             return SW_REFERENCE_NOT_FOUND();
         }
@@ -55,7 +55,7 @@ int cmd_change_pin(void) {
         r = file_put_data(tf, def, sizeof(def));
     }
     else if (P2(apdu) == 0x83) {
-        file_t *tf = search_by_fid(EF_DEK_PW3, NULL, SPECIFY_EF);
+        file_t *tf = file_search_by_fid(EF_DEK_PW3, NULL, SPECIFY_EF);
         if (!tf) {
             return SW_REFERENCE_NOT_FOUND();
         }
@@ -65,6 +65,6 @@ int cmd_change_pin(void) {
         encrypt_with_aad(session_pw3, dek, DEK_SIZE, PIN_KDF_DEFAULT_VERSION, def + 1);
         r = file_put_data(tf, def, sizeof(def));
     }
-    low_flash_available();
+    flash_commit();
     return SW_OK();
 }

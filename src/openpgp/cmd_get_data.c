@@ -26,7 +26,7 @@ int cmd_get_data(void) {
     }
     uint16_t fid = (P1(apdu) << 8) | P2(apdu);
     file_t *ef;
-    if (!(ef = search_by_fid(fid, NULL, SPECIFY_EF))) {
+    if (!(ef = file_search_by_fid(fid, NULL, SPECIFY_EF))) {
         return SW_REFERENCE_NOT_FOUND();
     }
     if (fid == EF_PRIV_DO_3) {
@@ -39,7 +39,7 @@ int cmd_get_data(void) {
             return SW_SECURITY_STATUS_NOT_SATISFIED();
         }
     }
-    else if (!authenticate_action(ef, ACL_OP_READ_SEARCH)) {
+    else if (!file_authenticate_action(ef, ACL_OP_READ_SEARCH)) {
         return SW_SECURITY_STATUS_NOT_SATISFIED();
     }
     if (currentEF && currentEF->fid == fid) { // previously selected same EF
@@ -124,17 +124,17 @@ int cmd_get_next_data(void) {
         return SW_RECORD_NOT_FOUND();
     }
     uint16_t fid = (P1(apdu) << 8) | P2(apdu);
-    if (!(ef = search_by_fid(fid, NULL, SPECIFY_EF))) {
+    if (!(ef = file_search_by_fid(fid, NULL, SPECIFY_EF))) {
         return SW_REFERENCE_NOT_FOUND();
     }
-    if (!authenticate_action(ef, ACL_OP_UPDATE_ERASE)) {
+    if (!file_authenticate_action(ef, ACL_OP_UPDATE_ERASE)) {
         return SW_SECURITY_STATUS_NOT_SATISFIED();
     }
     if ((currentEF->fid & 0x1FF0) != (fid & 0x1FF0)) {
         return SW_WRONG_P1P2();
     }
     fid = currentEF->fid + 1; //curentEF contains private DO. so, we select the next one
-    if (!(ef = search_by_fid(fid, NULL, SPECIFY_EF))) {
+    if (!(ef = file_search_by_fid(fid, NULL, SPECIFY_EF))) {
         return SW_REFERENCE_NOT_FOUND();
     }
     select_file(ef);
